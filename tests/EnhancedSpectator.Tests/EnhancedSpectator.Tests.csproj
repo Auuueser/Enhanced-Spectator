@@ -20,6 +20,10 @@
                HintPath="$(ManagedDir)\UnityEngine.CoreModule.dll"
                Private="true"
                Condition="Exists('$(ManagedDir)\UnityEngine.CoreModule.dll')" />
+    <Reference Include="Unity.InputSystem"
+               HintPath="$(ManagedDir)\Unity.InputSystem.dll"
+               Private="true"
+               Condition="Exists('$(ManagedDir)\Unity.InputSystem.dll')" />
     <Reference Include="Facepunch.Steamworks.Win64"
                HintPath="$(ManagedDir)\Facepunch.Steamworks.Win64.dll"
                Private="true"

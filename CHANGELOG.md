@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.2.0
+
+### Spectator Camera
+
+- Reduced spectator-view movement inherited from watched-player walk and run animation by preferring stable player-root camera anchors when available.
+- Preserved existing animated-body fallbacks for compatibility when a stable root anchor cannot be resolved.
+
+### Disconnect Recovery
+
+- Added automatic spectator target recovery when the currently watched player disconnects and another living player is available.
+- Improved non-host client recovery for disconnected targets so client spectators no longer remain attached to off-map disconnected-player models.
+- Kept mod-owned target recovery compatible with vanilla spectator switching and enhanced-freecam input suppression.
+
+### Remote Spectator Visibility
+
+- Improved remote floating-head visibility for dead compatible clients across host and client perspectives.
+- Stabilized floating-head and name-tag updates during target changes, disconnect windows, and enhanced-freecam to vanilla-view transitions.
+
+### Performance
+
+- Reduced steady-state lookup and allocation pressure in spectator input, camera snapshots, floating-head name text, runtime dispatch, network sampling, and voice-routing player lookup paths.
+- Kept verbose diagnostics behind debug configuration gates so normal play avoids avoidable log formatting and message churn.
+
 ## 0.1.3
 
 ### Spectator Visibility

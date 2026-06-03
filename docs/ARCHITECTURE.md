@@ -108,7 +108,7 @@ The inspection layer records ids, known transform paths, head-related transform 
 
 Patch modules implement `IPatchModule`. `PatchBootstrapper` owns the Harmony instance and registers modules through a single entry point.
 
-`SpectatorLifecyclePatchModule` primarily registers low-risk public Harmony patches. It also has one narrow publicized private prefix for `SpectateNextPlayer(bool)` so Space can be used as freecam ascend without vanilla target switching stealing the same input, and so the ESC quick menu can suppress local spectator target switching. During shutdown/disconnect, that prefix skips the vanilla call only in the unsafe teardown window where player arrays may already be partially destroyed. Patches do not contain camera movement logic.
+`SpectatorLifecyclePatchModule` primarily registers low-risk public Harmony patches. It also has one narrow publicized private prefix for `SpectateNextPlayer(bool)` so Space can be used as freecam ascend without vanilla target switching stealing the same input, and so the ESC quick menu can suppress local spectator target switching. During shutdown/disconnect, that prefix skips the vanilla call only in the unsafe teardown window where player arrays may already be partially destroyed. `SpectatorDisconnectTargetSwitchService` subscribes to Unity Netcode's public disconnect callback and also validates the current watched target at a low fixed interval while active, then asks GameInterop to invoke vanilla target switching if the local dead spectator is still watching a disconnected target and another living target exists. Patches do not contain camera movement logic.
 
 Current public patch points:
 
@@ -126,7 +126,9 @@ Private per-frame camera and look-input spectator methods remain unpatched in th
 
 `GameInterop` is the boundary for Lethal Company API access. Feature code should depend on interfaces such as `IGameSpectatorAdapter`, not raw game classes.
 
-`LethalCompanySpectatorAdapter` is the concrete adapter for confirmed spectator state. It reads `StartOfRound`, `PlayerControllerB`, the vanilla `spectateCamera`, the current `spectatedPlayerScript`, and safe target anchor transforms. It chooses anchors in this order: `lowerSpine`, `playerGlobalHead`, then the target player transform.
+`LethalCompanySpectatorAdapter` is the concrete adapter for confirmed spectator state. It reads `StartOfRound`, `PlayerControllerB`, the vanilla `spectateCamera`, the current `spectatedPlayerScript`, and safe target anchor transforms. It chooses the stable target player transform first for local spectator camera anchoring, with `lowerSpine` and then `playerGlobalHead` as fallbacks only when the root transform is unavailable.
+
+`LethalCompanySpectatorTargetSwitchAdapter` is the concrete adapter for disconnect recovery target switching. It reads the local dead spectator, current `spectatedPlayerScript`, confirmed valid target predicates, and replacement target availability, then calls vanilla `SpectateNextPlayer(false)` only when the pure disconnect switch rules allow it.
 
 Networking code receives spectator target ids through `ISpectatorTargetStateProvider` and freecam world pose through `ISpectatorPoseStateProvider`; it does not read Lethal Company fields directly.
 

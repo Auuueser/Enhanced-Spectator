@@ -17,6 +17,7 @@ public sealed class SpectatorFreecamController
     private const int CameraInactiveRecoveryFrames = 3;
 
     private readonly IGameSpectatorAdapter _adapter;
+    private readonly SpectatorSnapshotCache _snapshotCache;
     private readonly SpectatorAnchorService _anchorService;
     private readonly SpectatorInputService _inputService;
     private readonly SpectatorFreecamSettings _settings;
@@ -45,11 +46,13 @@ public sealed class SpectatorFreecamController
     /// </summary>
     public SpectatorFreecamController(
         IGameSpectatorAdapter adapter,
+        SpectatorSnapshotCache snapshotCache,
         SpectatorAnchorService anchorService,
         SpectatorInputService inputService,
         SpectatorFreecamSettings settings)
     {
         _adapter = adapter;
+        _snapshotCache = snapshotCache ?? throw new ArgumentNullException(nameof(snapshotCache));
         _anchorService = anchorService;
         _inputService = inputService;
         _settings = settings;
@@ -281,7 +284,7 @@ public sealed class SpectatorFreecamController
             return false;
         }
 
-        if (!_adapter.TryGetLocalSpectatorSnapshot(out snapshot))
+        if (!_snapshotCache.TryGetCurrentFrameSnapshot(out snapshot))
         {
             ResetForNonSpectator();
             return false;
@@ -473,6 +476,11 @@ public sealed class SpectatorFreecamController
         GameSpectatorSnapshot snapshot,
         bool softPaused)
     {
+        if (!ModLog.IsDebugEnabled)
+        {
+            return;
+        }
+
         if (Time.frameCount < _nextEligibilityDebugFrame && reason == _lastEligibilityDebugReason)
         {
             return;
@@ -628,7 +636,7 @@ public sealed class SpectatorFreecamController
         _state.WorldPosition = _smoothedPosition;
         _state.HasWorldPose = true;
 
-        if (Time.frameCount >= _nextApplyDebugFrame)
+        if (ModLog.IsDebugEnabled && Time.frameCount >= _nextApplyDebugFrame)
         {
             _nextApplyDebugFrame = Time.frameCount + 120;
             ModLog.Debug(
@@ -699,6 +707,11 @@ public sealed class SpectatorFreecamController
 
     private void LogQuickMenuInputBlocked()
     {
+        if (!ModLog.IsDebugEnabled)
+        {
+            return;
+        }
+
         if (Time.frameCount < _nextMenuBlockDebugFrame)
         {
             return;

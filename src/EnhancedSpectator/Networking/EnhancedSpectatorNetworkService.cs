@@ -17,6 +17,8 @@ public sealed class EnhancedSpectatorNetworkService : IEnhancedSpectatorNetworkS
     private const float CapabilityStableDelaySeconds = 0.35f;
     private const int CapabilityStableDelayFrames = 3;
     private const float CompatiblePeerProbeTimeoutSeconds = 2.5f;
+    private const float CapabilityProbeRetryIntervalSeconds = 2.5f;
+    private const float SpectatorPoseHeartbeatIntervalSeconds = 0.5f;
 
     private readonly EnhancedSpectatorConfig _config;
     private readonly ISpectatorTargetStateProvider _spectatorTargetStateProvider;
@@ -38,6 +40,7 @@ public sealed class EnhancedSpectatorNetworkService : IEnhancedSpectatorNetworkS
     private SpectatorPoseState? _lastObservedPoseState;
     private SpectatorPoseState? _lastSentPoseState;
     private SpectatorPoseState? _pendingPoseState;
+    private bool _pendingPoseRefresh;
     private VoiceActivityState? _lastObservedVoiceActivityState;
     private VoiceActivityState? _lastSentVoiceActivityState;
     private VoiceActivityState? _pendingVoiceActivityState;
@@ -54,6 +57,10 @@ public sealed class EnhancedSpectatorNetworkService : IEnhancedSpectatorNetworkS
     private float _nextTargetSyncTime;
     private float _nextPoseSyncTime;
     private float _nextVoiceActivitySyncTime;
+    private float _nextTargetSampleTime;
+    private float _nextPoseSampleTime;
+    private float _nextPoseRefreshTime;
+    private float _nextVoiceActivitySampleTime;
     private float _nextVoiceActivityRefreshTime;
     private float _nextPeerPruneTime;
     private float _transportRegisteredRealtime;
@@ -136,6 +143,12 @@ public sealed class EnhancedSpectatorNetworkService : IEnhancedSpectatorNetworkS
     public NetworkLifecycleState LifecycleState => _lifecycleState;
 
     /// <inheritdoc />
+    public int RemotePeerIdentityRevision => _remoteIdentityRegistry.Revision;
+
+    /// <inheritdoc />
+    public int RemoteSpectatorTargetRevision => _remoteTargetRegistry.Revision;
+
+    /// <inheritdoc />
     public void Initialize()
     {
         if (_initialized)
@@ -184,14 +197,14 @@ public sealed class EnhancedSpectatorNetworkService : IEnhancedSpectatorNetworkS
             UpdateCompatiblePeerProbeState();
             if (!NetworkCompatibilityPolicy.ShouldRunBusinessSync(_lifecycleState, _targetSyncReady))
             {
-                ClearPendingBusinessSync();
+                ClearBusinessSyncState();
                 return;
             }
 
             UpdateAndSendLocalPeerIdentity();
-            UpdateLocalSpectatorTarget();
-            UpdateLocalSpectatorPose();
-            UpdateLocalVoiceActivity();
+            UpdateLocalSpectatorTargetIfDue();
+            UpdateLocalSpectatorPoseIfDue();
+            UpdateLocalVoiceActivityIfDue();
             UpdateTargetSyncReadiness();
             TrySendPendingTargetState();
             TrySendPendingPoseState();
@@ -288,6 +301,17 @@ public sealed class EnhancedSpectatorNetworkService : IEnhancedSpectatorNetworkS
     }
 
     /// <inheritdoc />
+    public void CopyRemotePeerIdentitiesTo(List<PeerIdentityState> destination)
+    {
+        if (destination == null)
+        {
+            throw new ArgumentNullException(nameof(destination));
+        }
+
+        _remoteIdentityRegistry.CopySnapshotTo(destination);
+    }
+
+    /// <inheritdoc />
     public IReadOnlyList<VoiceActivityState> GetRemoteVoiceActivities()
     {
         return _remoteVoiceActivityRegistry.GetSnapshot().AsReadOnly();
@@ -351,11 +375,20 @@ public sealed class EnhancedSpectatorNetworkService : IEnhancedSpectatorNetworkS
             _lastObservedPoseState = null;
             _lastSentPoseState = null;
             _pendingPoseState = null;
+            _pendingPoseRefresh = false;
             _lastObservedVoiceActivityState = null;
             _lastSentVoiceActivityState = null;
             _pendingVoiceActivityState = null;
             _pendingVoiceActivityRefresh = false;
             _lastSentIdentityState = null;
+            _nextTargetSyncTime = 0f;
+            _nextPoseSyncTime = 0f;
+            _nextVoiceActivitySyncTime = 0f;
+            _nextTargetSampleTime = 0f;
+            _nextPoseSampleTime = 0f;
+            _nextPoseRefreshTime = 0f;
+            _nextVoiceActivitySampleTime = 0f;
+            _nextVoiceActivityRefreshTime = 0f;
             _capabilitySent = false;
             _capabilityProbeSentRealtime = -1f;
             _noCompatiblePeerLocalOnly = false;
@@ -376,7 +409,13 @@ public sealed class EnhancedSpectatorNetworkService : IEnhancedSpectatorNetworkS
             return;
         }
 
-        if (_capabilitySent)
+        if (_capabilitySent
+            && !NetworkCompatibilityPolicy.ShouldRetryCapabilityProbe(
+                _targetSyncReady,
+                _capabilitySent,
+                _capabilityProbeSentRealtime,
+                _runtimeState.RealtimeSinceStartup,
+                CapabilityProbeRetryIntervalSeconds))
         {
             return;
         }
@@ -400,6 +439,7 @@ public sealed class EnhancedSpectatorNetworkService : IEnhancedSpectatorNetworkS
             _capabilitySent = true;
             _capabilityProbeSentRealtime = _runtimeState.RealtimeSinceStartup;
             _noCompatiblePeerLocalOnly = false;
+            _lifecycleState = NetworkLifecycleState.TransportRegistered;
             Debug(
                 $"Capability sent: client={capability.ClientId}, targetSync={capability.SupportsSpectatorTargetSync}, voiceSync={capability.SupportsVoiceActivitySync}, voiceRoute={capability.SupportsSpectatorVoiceToTarget}.");
             return;
@@ -548,24 +588,48 @@ public sealed class EnhancedSpectatorNetworkService : IEnhancedSpectatorNetworkS
         }
     }
 
-    private void ClearPendingBusinessSync()
+    private void ClearBusinessSyncState()
     {
-        if (!_noCompatiblePeerLocalOnly)
-        {
-            return;
-        }
-
         _lastObservedTargetState = null;
         _lastSentTargetState = null;
         _pendingTargetState = null;
         _lastObservedPoseState = null;
         _lastSentPoseState = null;
         _pendingPoseState = null;
+        _pendingPoseRefresh = false;
         _lastObservedVoiceActivityState = null;
         _lastSentVoiceActivityState = null;
         _pendingVoiceActivityState = null;
         _pendingVoiceActivityRefresh = false;
         _lastSentIdentityState = null;
+        _nextTargetSampleTime = 0f;
+        _nextPoseSampleTime = 0f;
+        _nextPoseRefreshTime = 0f;
+        _nextVoiceActivitySampleTime = 0f;
+    }
+
+    private void UpdateLocalSpectatorTargetIfDue()
+    {
+        if (!_config.EnableSpectatorTargetSync.Value)
+        {
+            _lastObservedTargetState = null;
+            _lastSentTargetState = null;
+            _pendingTargetState = null;
+            return;
+        }
+
+        if (!NetworkSyncSamplingRules.ShouldSample(
+            _lastObservedTargetState != null,
+            _runtimeState.UnscaledTime,
+            _nextTargetSampleTime))
+        {
+            return;
+        }
+
+        UpdateLocalSpectatorTarget();
+        _nextTargetSampleTime = NetworkSyncSamplingRules.ResolveNextSampleTime(
+            _runtimeState.UnscaledTime,
+            (float)ModNetworkConstants.TargetSyncMinIntervalSeconds);
     }
 
     private void UpdateLocalSpectatorTarget()
@@ -592,6 +656,31 @@ public sealed class EnhancedSpectatorNetworkService : IEnhancedSpectatorNetworkS
 
         Debug(
             $"Observed spectator target change: spectating={state.IsSpectating}, localClient={state.LocalClientId}, localSlot={state.LocalPlayerSlotId}, targetClient={FormatNullable(state.TargetClientId)}, targetSlot={FormatNullable(state.TargetPlayerSlotId)}.");
+    }
+
+    private void UpdateLocalSpectatorPoseIfDue()
+    {
+        if (!_config.EnableSpectatorPoseSync.Value)
+        {
+            _lastObservedPoseState = null;
+            _lastSentPoseState = null;
+            _pendingPoseState = null;
+            _pendingPoseRefresh = false;
+            return;
+        }
+
+        if (!NetworkSyncSamplingRules.ShouldSample(
+            _lastObservedPoseState != null,
+            _runtimeState.UnscaledTime,
+            _nextPoseSampleTime))
+        {
+            return;
+        }
+
+        UpdateLocalSpectatorPose();
+        _nextPoseSampleTime = NetworkSyncSamplingRules.ResolveNextSampleTime(
+            _runtimeState.UnscaledTime,
+            GetPoseSyncInterval());
     }
 
     private void TrySendPendingTargetState()
@@ -656,6 +745,7 @@ public sealed class EnhancedSpectatorNetworkService : IEnhancedSpectatorNetworkS
             _lastObservedPoseState = null;
             _lastSentPoseState = null;
             _pendingPoseState = null;
+            _pendingPoseRefresh = false;
             return;
         }
 
@@ -674,6 +764,16 @@ public sealed class EnhancedSpectatorNetworkService : IEnhancedSpectatorNetworkS
 
         if (_lastObservedPoseState != null && _lastObservedPoseState.ApproximatelyEquals(state))
         {
+            if (NetworkSyncSamplingRules.ShouldRefreshUnchangedState(
+                state.IsSpectating,
+                _lastSentPoseState != null && _lastSentPoseState.IsSpectating,
+                _runtimeState.UnscaledTime,
+                _nextPoseRefreshTime))
+            {
+                _pendingPoseState = state;
+                _pendingPoseRefresh = true;
+            }
+
             return;
         }
 
@@ -681,10 +781,12 @@ public sealed class EnhancedSpectatorNetworkService : IEnhancedSpectatorNetworkS
         if (_lastSentPoseState != null && _lastSentPoseState.ApproximatelyEquals(state))
         {
             _pendingPoseState = null;
+            _pendingPoseRefresh = false;
         }
         else
         {
             _pendingPoseState = state;
+            _pendingPoseRefresh = false;
         }
 
         if (IsPoseDebugEnabled())
@@ -692,6 +794,31 @@ public sealed class EnhancedSpectatorNetworkService : IEnhancedSpectatorNetworkS
             ModLog.Debug(
                 $"Observed spectator pose change: spectating={state.IsSpectating}, localClient={state.LocalClientId}, targetClient={FormatNullable(state.TargetClientId)}, position={FormatVector(state.Position)}.");
         }
+    }
+
+    private void UpdateLocalVoiceActivityIfDue()
+    {
+        if (!_config.EnableVoiceActivitySync.Value)
+        {
+            _lastObservedVoiceActivityState = null;
+            _lastSentVoiceActivityState = null;
+            _pendingVoiceActivityState = null;
+            _pendingVoiceActivityRefresh = false;
+            return;
+        }
+
+        if (!NetworkSyncSamplingRules.ShouldSample(
+            _lastObservedVoiceActivityState != null,
+            _runtimeState.UnscaledTime,
+            _nextVoiceActivitySampleTime))
+        {
+            return;
+        }
+
+        UpdateLocalVoiceActivity();
+        _nextVoiceActivitySampleTime = NetworkSyncSamplingRules.ResolveNextSampleTime(
+            _runtimeState.UnscaledTime,
+            GetVoiceActivitySyncInterval());
     }
 
     private void TrySendPendingPoseState()
@@ -713,7 +840,9 @@ public sealed class EnhancedSpectatorNetworkService : IEnhancedSpectatorNetworkS
             return;
         }
 
-        if (_lastSentPoseState != null && _lastSentPoseState.ApproximatelyEquals(_pendingPoseState))
+        if (!_pendingPoseRefresh
+            && _lastSentPoseState != null
+            && _lastSentPoseState.ApproximatelyEquals(_pendingPoseState))
         {
             _pendingPoseState = null;
             return;
@@ -740,7 +869,9 @@ public sealed class EnhancedSpectatorNetworkService : IEnhancedSpectatorNetworkS
         {
             _lastSentPoseState = _pendingPoseState;
             _pendingPoseState = null;
+            _pendingPoseRefresh = false;
             _nextPoseSyncTime = _runtimeState.UnscaledTime + GetPoseSyncInterval();
+            _nextPoseRefreshTime = _runtimeState.UnscaledTime + GetPoseHeartbeatInterval();
             if (IsPoseDebugEnabled())
             {
                 ModLog.Debug(
@@ -1773,6 +1904,7 @@ public sealed class EnhancedSpectatorNetworkService : IEnhancedSpectatorNetworkS
         _lastObservedPoseState = null;
         _lastSentPoseState = null;
         _pendingPoseState = null;
+        _pendingPoseRefresh = false;
         _lastObservedVoiceActivityState = null;
         _lastSentVoiceActivityState = null;
         _pendingVoiceActivityState = null;
@@ -1789,7 +1921,13 @@ public sealed class EnhancedSpectatorNetworkService : IEnhancedSpectatorNetworkS
         _transportRegisteredRealtime = 0f;
         _transportRegisteredFrame = -1;
         _lastTargetSyncWaitReason = null;
+        _nextTargetSyncTime = 0f;
+        _nextPoseSyncTime = 0f;
         _nextVoiceActivitySyncTime = 0f;
+        _nextTargetSampleTime = 0f;
+        _nextPoseSampleTime = 0f;
+        _nextPoseRefreshTime = 0f;
+        _nextVoiceActivitySampleTime = 0f;
         _nextVoiceActivityRefreshTime = 0f;
         _voiceDebugLimiter.Clear();
     }
@@ -1833,9 +1971,14 @@ public sealed class EnhancedSpectatorNetworkService : IEnhancedSpectatorNetworkS
         return Mathf.Max(0.02f, _config.SpectatorPoseSyncInterval.Value);
     }
 
+    private float GetPoseHeartbeatInterval()
+    {
+        return Mathf.Max(SpectatorPoseHeartbeatIntervalSeconds, GetPoseSyncInterval() * 5f);
+    }
+
     private float GetVoiceActivitySyncInterval()
     {
-        return Mathf.Max(0.03f, _config.VoiceActivitySyncInterval.Value);
+        return NetworkSyncSamplingRules.ResolveVoiceActivitySyncInterval(_config.VoiceActivitySyncInterval.Value);
     }
 
     private float GetVoiceActivityRefreshInterval()

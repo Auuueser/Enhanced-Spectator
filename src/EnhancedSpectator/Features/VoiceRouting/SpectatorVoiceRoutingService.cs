@@ -72,6 +72,15 @@ public sealed class SpectatorVoiceRoutingService : IDisposable
 
         _desiredRoutes.Clear();
         _networkService.CopyRemoteSpectatorTargetsTo(_remoteTargets);
+        if (_remoteTargets.Count == 0)
+        {
+            ClearRoutesNotIn(_desiredRoutes);
+            return;
+        }
+
+        SpectatorVoiceAudienceMode audienceMode = _config.SpectatorVoiceAudienceMode.Value;
+        SpectatorVoicePlaybackSettings playbackSettings = default;
+        bool hasPlaybackSettings = false;
         foreach (SpectatorTargetState remoteTarget in _remoteTargets)
         {
             if (remoteTarget.LocalClientId == localClientId)
@@ -89,7 +98,7 @@ public sealed class SpectatorVoiceRoutingService : IDisposable
                 isLocalPlayerDead,
                 remoteTarget.IsSpectating,
                 isWatchingLocalPlayer,
-                _config.SpectatorVoiceAudienceMode.Value))
+                audienceMode))
             {
                 continue;
             }
@@ -101,11 +110,17 @@ public sealed class SpectatorVoiceRoutingService : IDisposable
             }
 
             SpectatorPoseState? poseState = TryGetMatchingPose(remoteTarget);
+            if (!hasPlaybackSettings)
+            {
+                playbackSettings = CreatePlaybackSettings();
+                hasPlaybackSettings = true;
+            }
+
             if (_adapter.TryApplySpectatorVoiceRoute(
                 remoteTarget.LocalClientId,
                 remoteTarget.LocalPlayerSlotId,
                 poseState,
-                CreatePlaybackSettings(),
+                playbackSettings,
                 out string reason))
             {
                 _desiredRoutes.Add(remoteTarget.LocalClientId);
@@ -113,7 +128,7 @@ public sealed class SpectatorVoiceRoutingService : IDisposable
                 _lastRouteSkips.Remove(remoteTarget.LocalClientId);
                 if (_activeRoutes.Add(remoteTarget.LocalClientId))
                 {
-                    Debug($"Spectator voice route enabled: spectatorClient={remoteTarget.LocalClientId}, spectatorSlot={remoteTarget.LocalPlayerSlotId}, audienceMode={_config.SpectatorVoiceAudienceMode.Value}.");
+                    DebugRouteEnabled(remoteTarget, audienceMode);
                 }
 
                 continue;
@@ -167,6 +182,7 @@ public sealed class SpectatorVoiceRoutingService : IDisposable
             _activeSlots.Clear();
             _lastRouteSkips.Clear();
             _remoteTargets.Clear();
+            _adapter.ClearCachedVoiceRouteLookups();
             return;
         }
 
@@ -181,6 +197,7 @@ public sealed class SpectatorVoiceRoutingService : IDisposable
         _activeSlots.Clear();
         _lastRouteSkips.Clear();
         _remoteTargets.Clear();
+        _adapter.ClearCachedVoiceRouteLookups();
     }
 
     private void ClearRoute(ulong clientId, string reason)
@@ -194,20 +211,43 @@ public sealed class SpectatorVoiceRoutingService : IDisposable
         _activeSlots.Remove(clientId);
         _adapter.ClearSpectatorVoiceRoute(clientId, slotId);
         _lastRouteSkips.Remove(clientId);
-        Debug($"Spectator voice route cleared: spectatorClient={clientId}, reason={reason}.");
+        if (_activeRoutes.Count == 0)
+        {
+            _adapter.ClearCachedVoiceRouteLookups();
+        }
+
+        DebugRouteCleared(clientId, reason);
     }
 
-    private void Debug(string message)
+    private bool ShouldLogDebug()
     {
-        if (_config.EnableDebugLogging.Value && _config.DebugSpectatorVoiceRouting.Value)
+        return ModLog.IsDebugEnabled && _config.EnableDebugLogging.Value && _config.DebugSpectatorVoiceRouting.Value;
+    }
+
+    private void DebugRouteEnabled(SpectatorTargetState remoteTarget, SpectatorVoiceAudienceMode audienceMode)
+    {
+        if (!ShouldLogDebug())
         {
-            ModLog.Debug(message);
+            return;
         }
+
+        ModLog.Debug(
+            $"Spectator voice route enabled: spectatorClient={remoteTarget.LocalClientId}, spectatorSlot={remoteTarget.LocalPlayerSlotId}, audienceMode={audienceMode}.");
+    }
+
+    private void DebugRouteCleared(ulong clientId, string reason)
+    {
+        if (!ShouldLogDebug())
+        {
+            return;
+        }
+
+        ModLog.Debug($"Spectator voice route cleared: spectatorClient={clientId}, reason={reason}.");
     }
 
     private void DebugRouteSkipped(ulong clientId, string reason)
     {
-        if (!_config.EnableDebugLogging.Value || !_config.DebugSpectatorVoiceRouting.Value)
+        if (!ShouldLogDebug())
         {
             return;
         }

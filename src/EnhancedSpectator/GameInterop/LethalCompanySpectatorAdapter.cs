@@ -165,29 +165,8 @@ public sealed class LethalCompanySpectatorAdapter : IGameSpectatorAdapter
     public bool IsValidSpectateTarget(object? target)
     {
         PlayerControllerB? player = target as PlayerControllerB;
-        if (player == null
-            || !player.isPlayerControlled
-            || player.isPlayerDead
-            || player.disconnectedMidGame)
-        {
-            return false;
-        }
-
         StartOfRound round = StartOfRound.Instance;
-        if (round == null || round.ClientPlayerList == null || round.allPlayerScripts == null)
-        {
-            return false;
-        }
-
-        if (!round.ClientPlayerList.TryGetValue(player.actualClientId, out int slot)
-            || slot < 0
-            || slot >= round.allPlayerScripts.Length
-            || round.allPlayerScripts[slot] != player)
-        {
-            return false;
-        }
-
-        return player.playerClientId == (ulong)slot;
+        return LethalCompanySpectatorTargetRules.IsValidSpectateTarget(round, player);
     }
 
     /// <inheritdoc />
@@ -366,17 +345,28 @@ public sealed class LethalCompanySpectatorAdapter : IGameSpectatorAdapter
 
     private static Transform? ResolveAnchor(PlayerControllerB player)
     {
-        if (player.lowerSpine != null)
+        Transform? root = player.transform;
+        SpectatorTargetAnchorSource source = SpectatorTargetAnchorSelectionRules.Resolve(
+            root != null,
+            player.lowerSpine != null,
+            player.playerGlobalHead != null);
+
+        if (source == SpectatorTargetAnchorSource.PlayerRoot)
+        {
+            return root;
+        }
+
+        if (source == SpectatorTargetAnchorSource.LowerSpine)
         {
             return player.lowerSpine;
         }
 
-        if (player.playerGlobalHead != null)
+        if (source == SpectatorTargetAnchorSource.GlobalHead)
         {
             return player.playerGlobalHead;
         }
 
-        return player.transform;
+        return null;
     }
 
     private static PlayerControllerB? GetLocalPlayer()

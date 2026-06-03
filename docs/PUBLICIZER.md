@@ -1,32 +1,86 @@
 # Publicizer
 
-Enhanced Spectator uses `BepInEx.AssemblyPublicizer.MSBuild` for direct access to confirmed game members when needed.
+## Why Publicizer Is Used
 
-## Why
+Enhanced Spectator needs efficient access to confirmed Lethal Company members. Runtime reflection adds overhead and makes failures easier to hide until runtime. `BepInEx.AssemblyPublicizer.MSBuild` lets the project compile against publicized game assemblies so code can use direct member access after the members are confirmed.
 
-Runtime reflection is avoided in production code. Confirmed non-public game members should be accessed through publicized game assemblies and direct member access instead of reflection helpers.
+## MSBuild Configuration
 
-## Build Configuration
+The publicizer package is configured in:
 
-The project defines:
-
-```xml
-<GameDir>D:\Steam\steamapps\common\Lethal Company</GameDir>
-<ManagedDir>$(GameDir)\Lethal Company_Data\Managed</ManagedDir>
+```text
+src/EnhancedSpectator/EnhancedSpectator.csproj
 ```
 
-Game assembly references use `Condition="Exists(...)"` so package restore can still run on machines without the local game path.
+The scaffold includes the package with private assets:
 
-`Assembly-CSharp.dll` is marked with `Publicize="true"`.
+```xml
+<PackageReference Include="BepInEx.AssemblyPublicizer.MSBuild" Version="0.4.3" PrivateAssets="all" />
+```
 
-## Override GameDir
+The initial game assembly reference is:
+
+```xml
+<Reference Include="Assembly-CSharp"
+           HintPath="$(ManagedDir)\Assembly-CSharp.dll"
+           Private="false"
+           Publicize="true"
+           Condition="Exists('$(ManagedDir)\Assembly-CSharp.dll')" />
+```
+
+Only game assemblies should use `Publicize="true"`. Do not apply it to BepInEx, Harmony, or UnityEngine dependencies.
+
+The MVP also references `Unity.Netcode.Runtime.dll` as a normal conditional dependency because confirmed game types derive from Netcode classes:
+
+```xml
+<Reference Include="Unity.Netcode.Runtime"
+           HintPath="$(ManagedDir)\Unity.Netcode.Runtime.dll"
+           Private="false"
+           Condition="Exists('$(ManagedDir)\Unity.Netcode.Runtime.dll')" />
+```
+
+Do not add `Publicize="true"` to this Netcode reference unless a future feature has a confirmed need for non-public Netcode members.
+
+## Local Paths
+
+Default game path:
+
+```powershell
+D:\Steam\steamapps\common\Lethal Company
+```
+
+Default managed assembly path:
+
+```powershell
+$(GameDir)\Lethal Company_Data\Managed
+```
+
+Override `GameDir` at build time:
 
 ```powershell
 dotnet build -p:GameDir="D:\Steam\steamapps\common\Lethal Company"
 ```
 
-Use your own local install path when different.
+## Avoiding Reflection
 
-## Restrictions
+Production code must not use reflection APIs or Harmony helper wrappers to access game fields, properties, or methods. If non-public game members are needed, confirm the members, publicize the game assembly, and access the members directly.
 
-Production code must not use reflection helpers to read or write Lethal Company members. Do not use `AccessTools`, `Traverse`, `BindingFlags`, `GetField`, `GetMethod`, or reflection metadata APIs for game-member access.
+Forbidden examples include `System.Reflection`, `BindingFlags`, `Type.GetField`, `Type.GetMethod`, `FieldInfo`, `MethodInfo`, `PropertyInfo`, `HarmonyLib.AccessTools`, and `HarmonyLib.Traverse`.
+
+## Codex Cloud or Missing Local DLLs
+
+The game assembly references are conditional. Package restore can still run without the local game install, but full MVP builds require the local managed game DLLs because the mod now references confirmed Lethal Company types.
+
+When future code references game types, build failures in cloud environments are expected unless the required local game DLLs are available. Do not work around this by committing DLLs.
+
+## Extending the List
+
+After confirming additional required game assemblies, add conditional references in the same style:
+
+```xml
+<Reference Include="SomeGameAssembly"
+           HintPath="$(ManagedDir)\SomeGameAssembly.dll"
+           Private="false"
+           Publicize="true"
+           Condition="Exists('$(ManagedDir)\SomeGameAssembly.dll')" />
+```

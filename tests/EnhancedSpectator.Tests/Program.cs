@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using EnhancedSpectator.Features;
 using EnhancedSpectator.Features.FloatingHead;
+using EnhancedSpectator.Features.PlayerStateSync;
 using EnhancedSpectator.Features.Spectator;
 using EnhancedSpectator.Features.SpectatorPresence;
 using EnhancedSpectator.Features.VoiceActivity;
@@ -8,8 +10,11 @@ using EnhancedSpectator.Features.VoiceDiagnostics;
 using EnhancedSpectator.Features.VoiceRouting;
 using EnhancedSpectator.GameInterop;
 using EnhancedSpectator.Config;
+using EnhancedSpectator.Logging;
 using EnhancedSpectator.Networking;
+using EnhancedSpectator.Runtime;
 using UnityEngine;
+using InputKey = UnityEngine.InputSystem.Key;
 
 namespace EnhancedSpectator.Tests;
 
@@ -26,15 +31,30 @@ internal static class Program
             ClientRejectsServerRelayWhenOriginWasNotMarkedRelayed();
             ClientRejectsDirectSenderForRelayedOrigin();
             HostRejectsForeignOriginFromDifferentSender();
+            NetworkSamplingSkipsBeforeNextSampleTime();
+            NetworkSamplingRunsAtNextSampleTime();
+            NetworkSamplingRunsFirstSampleEvenWhenWindowFuture();
+            NetworkSamplingNextTimeUsesMinimumInterval();
+            NetworkVoiceActivityIntervalUsesProtocolMinimum();
+            UnchangedActiveStateRefreshesAfterWindow();
             CapabilityProbeTimeoutUsesNoCompatiblePeerLocalOnlyState();
+            CapabilityProbeRetriesAfterNoCompatibleWindow();
+            CapabilityProbeDoesNotRetryWhenTargetSyncReady();
             CompatiblePeerKeepsTransportRegisteredState();
             TargetClientIdTakesPriorityOverSlotFallback();
             TargetSlotFallbackWorksOnlyWhenClientIdMissing();
             GlobalRemoteSpectatorVisibilityAllowsNonLocalTargets();
             RemoteSpectatorVisibilityRequiresMatchingPose();
             RemoteTargetRegistryRetainsInactiveStateForRepair();
+            RemoteTargetRegistryRevisionChangesOnlyForRepairRelevantChanges();
+            RemoteTargetRegistryRevisionChangesOnRemoveAndClear();
             ConnectedAliveVanillaSlotRepairRunsWithoutModIdentity();
             DeadVanillaSlotRepairDoesNotRestoreControl();
+            PlayerStateRepairScheduleRunsFirstEligibleTick();
+            PlayerStateRepairScheduleSkipsCleanIdleBeforeFallback();
+            PlayerStateRepairScheduleRunsWhenRemoteStateRevisionChanges();
+            PlayerStateRepairScheduleRunsIdleFallbackWithoutRevisionChange();
+            PlayerStateRepairScheduleRepeatsAfterSuccessfulRepair();
             VanillaFallbackNameOnlyReplacesGenericLabels();
             GenericPlayerNumberDisplayNamesAreRejected();
             GenericPlayerNumberDisplayNamesIgnoreNonSpaceWhitespace();
@@ -42,9 +62,17 @@ internal static class Program
             RemotePeerIdentityRegistryStoresAndRemovesNames();
             RemotePeerIdentityRegistryKeepsVoiceNameWhenNewerLegacyIdentityArrives();
             RemotePeerIdentityRegistryIgnoresOlderIdentity();
+            RemotePeerIdentityRegistryCopiesIntoCallerOwnedList();
+            RemotePeerIdentityRegistryCopyClearsDestination();
+            RemoteIdentityRegistryRevisionIgnoresOlderIdentity();
+            RemoteIdentityRegistryRevisionChangesOnlyForStoredIdentityChanges();
+            RemoteIdentityRegistryRevisionChangesOnRemoveAndClear();
             DetachedHeadVisualSourceRequiresConfigAndSource();
             DetachedHeadVisualSourceFallsBackOnlyWhenAllowed();
             RuntimeDetachedHeadUsesRemotePoseRotation();
+            FloatingHeadFrameUpdateRequiresFullUpdateWithoutCache();
+            FloatingHeadFrameUpdateUsesCameraOnlyAfterSameFrameFullUpdate();
+            FloatingHeadFrameUpdateRequiresFullUpdateOnNewFrame();
             SpeakingWithZeroAmplitudeUsesFallbackPulseLevel();
             SpeakingWithLowPositiveAmplitudeUsesAmplitudeInsteadOfFallback();
             PositiveAmplitudeWithoutSpeakingDoesNotDriveVoiceLevel();
@@ -64,6 +92,14 @@ internal static class Program
             SpectatorVoiceRoutingRequiresEnabledLivingLocalWatchedTarget();
             SpectatorVoiceRoutingAudienceModesSelectExpectedListeners();
             SpectatorVoiceRoutingRequiresRemoteCapabilityOptIn();
+            SpectatorVoicePlayerLookupCachePrefersClientIdOverSlotFallback();
+            SpectatorVoicePlayerLookupCacheKeepsFirstClientMatch();
+            SpectatorVoicePlayerLookupCacheKeepsFirstSlotFallbackMatch();
+            SpectatorVoicePlayerLookupCacheClearRemovesStaleEntries();
+            ModLogDebugEnabledReflectsConfiguredGate();
+            SpectatorInputKeyCacheReusesResolvedBinding();
+            SpectatorInputKeyCacheRefreshesWhenConfiguredKeyChanges();
+            SpectatorInputKeyCacheCachesUnmappedBindings();
             SpectatorVoiceDistanceAttenuationScalesVolumeByDistance();
             SpectatorVoiceSpatializationRemapsPoseIntoActualListenerFrame();
             SpectatorVoiceSpatializationPreservesWorldPoseWhenFramesMatch();
@@ -73,9 +109,32 @@ internal static class Program
             FreecamInactiveSpectateCameraSoftPausesDuringGrace();
             FreecamInactiveSpectateCameraPreservesPoseAfterGrace();
             FreecamLifecycleUnsafeSoftPausesWhenPoseExists();
+            DisconnectAutoSwitchRunsOnlyForInvalidCurrentTarget();
+            DisconnectAutoSwitchIgnoresInvalidNonDisconnectedTarget();
+            DisconnectAutoSwitchRequiresReplacementTarget();
+            DisconnectAutoSwitchTreatsUncontrolledAliveTargetAsDisconnectLike();
+            InternalTargetSwitchBypassesVanillaInputSuppression();
+            ExternalVerticalInputSuppressesVanillaTargetSwitch();
+            DisconnectSwitchResultRequiresChangedValidTarget();
             SpectatorPoseSyncUsesVanillaPoseWhenFreecamIsInactive();
             SpectatorPoseSyncDoesNotPublishWithoutFreecamOrActiveVanillaCamera();
             RemotePoseRegistryKeepsVisiblePoseThroughFreecamVanillaFreecamCycle();
+            GameSpectatorSnapshotUsesStructStorageToAvoidHotPathAllocation();
+            SpectatorSnapshotCacheReusesSuccessfulSnapshotWithinFrame();
+            SpectatorSnapshotCacheCachesFailureWithinFrame();
+            SpectatorSnapshotCacheRefreshesOnNewFrame();
+            SpectatorSnapshotCacheClearForcesResampleWithinFrame();
+            SpectatorSnapshotCacheDoesNotCommitFrameWhenAdapterThrows();
+            SpectatorAnchorTargetIdentityMatchesStablePlayerIds();
+            SpectatorAnchorTargetIdentityDetectsActualClientSwitch();
+            SpectatorAnchorTargetIdentityFallsBackToAnchorInstance();
+            SpectatorTargetAnchorSelectionPrefersStableRoot();
+            SpectatorTargetAnchorSelectionFallsBackToAnimatedBones();
+            NameTagTextCacheInvalidatesWhenIdentityRevisionChanges();
+            NameTagTextCacheInvalidatesWhenDisplayConfigChanges();
+            FeatureRuntimeDispatchListsKeepsPhaseOrder();
+            FeatureRuntimeDispatchListsAddsFeatureToEveryRegisteredPhase();
+            FeatureRuntimeDispatchListsDispatchesCallbacksInPhaseOrder();
             Console.WriteLine("All EnhancedSpectator tests passed.");
             return 0;
         }
@@ -211,6 +270,69 @@ internal static class Program
         AssertFalse(accepts, $"host should reject client state where sender does not match origin: {reason}");
     }
 
+    private static void NetworkSamplingSkipsBeforeNextSampleTime()
+    {
+        AssertFalse(
+            NetworkSyncSamplingRules.ShouldSample(hasObservedState: true, now: 1.19f, nextSampleTime: 1.20f),
+            "network sampling should skip provider reads before the next sample window");
+    }
+
+    private static void NetworkSamplingRunsAtNextSampleTime()
+    {
+        AssertTrue(
+            NetworkSyncSamplingRules.ShouldSample(hasObservedState: true, now: 1.20f, nextSampleTime: 1.20f),
+            "network sampling should run when the sample window opens");
+    }
+
+    private static void NetworkSamplingRunsFirstSampleEvenWhenWindowFuture()
+    {
+        AssertTrue(
+            NetworkSyncSamplingRules.ShouldSample(hasObservedState: false, now: 0.10f, nextSampleTime: 1.20f),
+            "network sampling should run first provider read even when a future sample time exists");
+    }
+
+    private static void NetworkSamplingNextTimeUsesMinimumInterval()
+    {
+        float nextSampleTime = NetworkSyncSamplingRules.ResolveNextSampleTime(now: 2.0f, intervalSeconds: -1.0f);
+
+        AssertNear(2.0f, nextSampleTime, "negative sampling interval should clamp to current time");
+    }
+
+    private static void NetworkVoiceActivityIntervalUsesProtocolMinimum()
+    {
+        float interval = NetworkSyncSamplingRules.ResolveVoiceActivitySyncInterval(0.03f);
+
+        AssertNear(
+            (float)ModNetworkConstants.VoiceActivitySyncMinIntervalSeconds,
+            interval,
+            "voice activity sync interval should use the protocol minimum");
+    }
+
+    private static void UnchangedActiveStateRefreshesAfterWindow()
+    {
+        AssertFalse(
+            NetworkSyncSamplingRules.ShouldRefreshUnchangedState(
+                stateIsActive: true,
+                hasSentState: true,
+                now: 1.49f,
+                nextRefreshTime: 1.50f),
+            "unchanged active state should not refresh before the recovery window");
+        AssertTrue(
+            NetworkSyncSamplingRules.ShouldRefreshUnchangedState(
+                stateIsActive: true,
+                hasSentState: true,
+                now: 1.50f,
+                nextRefreshTime: 1.50f),
+            "unchanged active state should refresh when the recovery window opens");
+        AssertFalse(
+            NetworkSyncSamplingRules.ShouldRefreshUnchangedState(
+                stateIsActive: false,
+                hasSentState: true,
+                now: 2.0f,
+                nextRefreshTime: 1.50f),
+            "inactive state should not use lossy heartbeat refresh");
+    }
+
     private static void CapabilityProbeTimeoutUsesNoCompatiblePeerLocalOnlyState()
     {
         NetworkLifecycleState lifecycleState = NetworkCompatibilityPolicy.ResolveLifecycleState(
@@ -227,6 +349,38 @@ internal static class Program
         AssertFalse(
             NetworkCompatibilityPolicy.ShouldRunBusinessSync(lifecycleState, targetSyncReady: false),
             "no-compatible local-only state should not run target/pose/voice business sync");
+    }
+
+    private static void CapabilityProbeRetriesAfterNoCompatibleWindow()
+    {
+        AssertFalse(
+            NetworkCompatibilityPolicy.ShouldRetryCapabilityProbe(
+                targetSyncReady: false,
+                capabilitySent: true,
+                capabilityProbeSentRealtime: 1f,
+                currentRealtime: 3.49f,
+                retryIntervalSeconds: 2.5f),
+            "capability probe should not retry before the no-compatible window elapses");
+        AssertTrue(
+            NetworkCompatibilityPolicy.ShouldRetryCapabilityProbe(
+                targetSyncReady: false,
+                capabilitySent: true,
+                capabilityProbeSentRealtime: 1f,
+                currentRealtime: 3.50f,
+                retryIntervalSeconds: 2.5f),
+            "capability probe should retry after no compatible peer answered");
+    }
+
+    private static void CapabilityProbeDoesNotRetryWhenTargetSyncReady()
+    {
+        AssertFalse(
+            NetworkCompatibilityPolicy.ShouldRetryCapabilityProbe(
+                targetSyncReady: true,
+                capabilitySent: true,
+                capabilityProbeSentRealtime: 1f,
+                currentRealtime: 10f,
+                retryIntervalSeconds: 2.5f),
+            "capability probe should not retry once a compatible peer is ready");
     }
 
     private static void CompatiblePeerKeepsTransportRegisteredState()
@@ -338,6 +492,131 @@ internal static class Program
             "lifecycle unsafe windows should preserve existing freecam pose without writing camera");
     }
 
+    private static void DisconnectAutoSwitchRunsOnlyForInvalidCurrentTarget()
+    {
+        AssertTrue(
+            SpectatorDisconnectTargetSwitchRules.ShouldAutoSwitch(
+                isLocalPlayerDead: true,
+                hasSpectateCamera: true,
+                gameOverOverrideActive: false,
+                hasCurrentTarget: true,
+                currentTargetIsValid: false,
+                currentTargetDisconnected: true,
+                hasReplacementTarget: true),
+            "disconnect auto-switch should run when the currently watched target is no longer valid");
+        AssertFalse(
+            SpectatorDisconnectTargetSwitchRules.ShouldAutoSwitch(
+                isLocalPlayerDead: true,
+                hasSpectateCamera: true,
+                gameOverOverrideActive: false,
+                hasCurrentTarget: true,
+                currentTargetIsValid: true,
+                currentTargetDisconnected: false,
+                hasReplacementTarget: true),
+            "disconnect auto-switch should not disturb a valid current target");
+    }
+
+    private static void DisconnectAutoSwitchIgnoresInvalidNonDisconnectedTarget()
+    {
+        AssertFalse(
+            SpectatorDisconnectTargetSwitchRules.ShouldAutoSwitch(
+                isLocalPlayerDead: true,
+                hasSpectateCamera: true,
+                gameOverOverrideActive: false,
+                hasCurrentTarget: true,
+                currentTargetIsValid: false,
+                currentTargetDisconnected: false,
+                hasReplacementTarget: true),
+            "disconnect auto-switch should not handle invalid targets unless the target is disconnected");
+    }
+
+    private static void DisconnectAutoSwitchRequiresReplacementTarget()
+    {
+        AssertFalse(
+            SpectatorDisconnectTargetSwitchRules.ShouldAutoSwitch(
+                isLocalPlayerDead: true,
+                hasSpectateCamera: true,
+                gameOverOverrideActive: false,
+                hasCurrentTarget: true,
+                currentTargetIsValid: false,
+                currentTargetDisconnected: true,
+                hasReplacementTarget: false),
+            "disconnect auto-switch should not call vanilla target switching when no living replacement exists");
+    }
+
+    private static void DisconnectAutoSwitchTreatsUncontrolledAliveTargetAsDisconnectLike()
+    {
+        AssertTrue(
+            SpectatorDisconnectTargetSwitchRules.IsDisconnectLikeInvalidTarget(
+                disconnectedMidGame: false,
+                isPlayerControlled: false,
+                isPlayerDead: false,
+                removedFromClientMap: false),
+            "an uncontrolled alive current target should be treated as disconnect-like for spectator recovery");
+        AssertTrue(
+            SpectatorDisconnectTargetSwitchRules.IsDisconnectLikeInvalidTarget(
+                disconnectedMidGame: false,
+                isPlayerControlled: true,
+                isPlayerDead: false,
+                removedFromClientMap: true),
+            "a current target removed from the vanilla client map should remain disconnect-like");
+        AssertFalse(
+            SpectatorDisconnectTargetSwitchRules.IsDisconnectLikeInvalidTarget(
+                disconnectedMidGame: false,
+                isPlayerControlled: false,
+                isPlayerDead: true,
+                removedFromClientMap: false),
+            "a dead target alone should not be treated as a disconnect by the disconnect recovery rule");
+    }
+
+    private static void InternalTargetSwitchBypassesVanillaInputSuppression()
+    {
+        bool suppress = SpectatorVanillaInputGuardRules.ShouldSuppressTargetSwitchInput(
+            internalTargetSwitchInProgress: true,
+            freecamWantsVerticalInput: true,
+            ascendKeyHeld: true,
+            descendKeyHeld: false,
+            out string reason);
+
+        AssertFalse(suppress, "internal disconnect target switch should bypass freecam vertical input suppression");
+        AssertEqual(string.Empty, reason, "internal bypass should not expose an input suppression reason");
+    }
+
+    private static void ExternalVerticalInputSuppressesVanillaTargetSwitch()
+    {
+        bool suppress = SpectatorVanillaInputGuardRules.ShouldSuppressTargetSwitchInput(
+            internalTargetSwitchInProgress: false,
+            freecamWantsVerticalInput: true,
+            ascendKeyHeld: false,
+            descendKeyHeld: true,
+            out string reason);
+
+        AssertTrue(suppress, "external vanilla target switching should still be suppressed while vertical freecam input is held");
+        AssertEqual("freecam vertical movement is held", reason, "vertical input suppression should keep its diagnostic reason");
+    }
+
+    private static void DisconnectSwitchResultRequiresChangedValidTarget()
+    {
+        AssertTrue(
+            SpectatorDisconnectTargetSwitchResultRules.DidSwitchToValidTarget(
+                targetSwitchInvoked: true,
+                targetChanged: true,
+                newTargetIsValid: true),
+            "disconnect auto-switch should report success only when vanilla changed to a valid target");
+        AssertFalse(
+            SpectatorDisconnectTargetSwitchResultRules.DidSwitchToValidTarget(
+                targetSwitchInvoked: true,
+                targetChanged: false,
+                newTargetIsValid: true),
+            "disconnect auto-switch should not report success when vanilla left the same target selected");
+        AssertFalse(
+            SpectatorDisconnectTargetSwitchResultRules.DidSwitchToValidTarget(
+                targetSwitchInvoked: true,
+                targetChanged: true,
+                newTargetIsValid: false),
+            "disconnect auto-switch should not report success when the new target is still invalid");
+    }
+
     private static void SpectatorPoseSyncUsesVanillaPoseWhenFreecamIsInactive()
     {
         bool useFreecamPose = SpectatorPoseSourceRules.ShouldUseFreecamPose(
@@ -425,6 +704,262 @@ internal static class Program
         registry.Update(restoredFreecamPose);
         AssertTrue(registry.TryGet(2, out SpectatorPoseState storedRestoredFreecamPose), "restored freecam pose should remain visible");
         AssertVectorNear(new Vector3(7f, 8f, 9f), storedRestoredFreecamPose.Position, "restored freecam pose should replace the vanilla fallback pose");
+    }
+
+    private static void GameSpectatorSnapshotUsesStructStorageToAvoidHotPathAllocation()
+    {
+        AssertStruct<GameSpectatorSnapshot>(
+            "local spectator snapshots should use struct storage to avoid hot-path heap allocation");
+    }
+
+    private static void SpectatorSnapshotCacheReusesSuccessfulSnapshotWithinFrame()
+    {
+        CountingGameSpectatorAdapter adapter = new CountingGameSpectatorAdapter
+        {
+            Snapshot = CreateSpectatorSnapshot(spectatedPlayerSlotId: 3, spectatedPlayerActualClientId: 7),
+        };
+        SpectatorSnapshotCache cache = new SpectatorSnapshotCache(adapter);
+
+        AssertTrue(cache.TryGetSnapshotForFrame(42, out GameSpectatorSnapshot first), "first snapshot read should succeed");
+        AssertTrue(cache.TryGetSnapshotForFrame(42, out GameSpectatorSnapshot second), "same-frame cached snapshot read should succeed");
+
+        AssertEqual(1, adapter.SnapshotCalls, "snapshot cache should sample adapter once per frame");
+        AssertTrue(first.SpectatedPlayerSlotId == 3UL, "first snapshot should preserve slot id");
+        AssertTrue(second.SpectatedPlayerActualClientId == 7UL, "cached snapshot should preserve actual client id");
+    }
+
+    private static void SpectatorSnapshotCacheCachesFailureWithinFrame()
+    {
+        CountingGameSpectatorAdapter adapter = new CountingGameSpectatorAdapter
+        {
+            SnapshotResult = false,
+        };
+        SpectatorSnapshotCache cache = new SpectatorSnapshotCache(adapter);
+
+        AssertFalse(cache.TryGetSnapshotForFrame(43, out _), "first failed snapshot read should return false");
+        AssertFalse(cache.TryGetSnapshotForFrame(43, out _), "same-frame failed snapshot read should stay cached");
+
+        AssertEqual(1, adapter.SnapshotCalls, "snapshot cache should cache adapter failures within a frame");
+    }
+
+    private static void SpectatorSnapshotCacheRefreshesOnNewFrame()
+    {
+        CountingGameSpectatorAdapter adapter = new CountingGameSpectatorAdapter
+        {
+            Snapshot = CreateSpectatorSnapshot(spectatedPlayerSlotId: 4, spectatedPlayerActualClientId: 8),
+        };
+        SpectatorSnapshotCache cache = new SpectatorSnapshotCache(adapter);
+
+        AssertTrue(cache.TryGetSnapshotForFrame(44, out GameSpectatorSnapshot first), "first frame snapshot should succeed");
+        adapter.Snapshot = CreateSpectatorSnapshot(spectatedPlayerSlotId: 5, spectatedPlayerActualClientId: 9);
+        AssertTrue(cache.TryGetSnapshotForFrame(45, out GameSpectatorSnapshot second), "new frame snapshot should resample adapter");
+
+        AssertEqual(2, adapter.SnapshotCalls, "snapshot cache should resample on new frame");
+        AssertTrue(first.SpectatedPlayerSlotId == 4UL, "first frame should keep original slot id");
+        AssertTrue(second.SpectatedPlayerSlotId == 5UL, "new frame should read updated slot id");
+    }
+
+    private static void SpectatorSnapshotCacheClearForcesResampleWithinFrame()
+    {
+        CountingGameSpectatorAdapter adapter = new CountingGameSpectatorAdapter
+        {
+            Snapshot = CreateSpectatorSnapshot(spectatedPlayerSlotId: 6, spectatedPlayerActualClientId: 10),
+        };
+        SpectatorSnapshotCache cache = new SpectatorSnapshotCache(adapter);
+
+        AssertTrue(cache.TryGetSnapshotForFrame(46, out GameSpectatorSnapshot first), "first snapshot should succeed");
+        cache.Clear();
+        adapter.Snapshot = CreateSpectatorSnapshot(spectatedPlayerSlotId: 7, spectatedPlayerActualClientId: 11);
+        AssertTrue(cache.TryGetSnapshotForFrame(46, out GameSpectatorSnapshot second), "cleared same-frame snapshot should resample adapter");
+
+        AssertEqual(2, adapter.SnapshotCalls, "clearing cache should force same-frame resample");
+        AssertTrue(first.SpectatedPlayerSlotId == 6UL, "first cached snapshot should keep original slot id");
+        AssertTrue(second.SpectatedPlayerSlotId == 7UL, "cleared snapshot should read updated slot id");
+    }
+
+    private static void SpectatorSnapshotCacheDoesNotCommitFrameWhenAdapterThrows()
+    {
+        CountingGameSpectatorAdapter adapter = new CountingGameSpectatorAdapter
+        {
+            Snapshot = CreateSpectatorSnapshot(spectatedPlayerSlotId: 8, spectatedPlayerActualClientId: 12),
+        };
+        SpectatorSnapshotCache cache = new SpectatorSnapshotCache(adapter);
+
+        AssertTrue(cache.TryGetSnapshotForFrame(47, out _), "initial snapshot should succeed");
+        adapter.ThrowOnSnapshot = true;
+        AssertThrows<InvalidOperationException>(
+            () => cache.TryGetSnapshotForFrame(48, out _),
+            "adapter exception should propagate");
+        adapter.ThrowOnSnapshot = false;
+        adapter.Snapshot = CreateSpectatorSnapshot(spectatedPlayerSlotId: 9, spectatedPlayerActualClientId: 13);
+        AssertTrue(cache.TryGetSnapshotForFrame(48, out GameSpectatorSnapshot recovered), "same-frame retry after exception should resample adapter");
+
+        AssertEqual(3, adapter.SnapshotCalls, "failed adapter read should not commit frame cache");
+        AssertTrue(recovered.SpectatedPlayerSlotId == 9UL, "same-frame retry after exception should not return stale snapshot");
+    }
+
+    private static void SpectatorAnchorTargetIdentityMatchesStablePlayerIds()
+    {
+        GameSpectatorSnapshot firstSnapshot = CreateSpectatorSnapshot(spectatedPlayerSlotId: 2, spectatedPlayerActualClientId: 10);
+        GameSpectatorSnapshot secondSnapshot = CreateSpectatorSnapshot(spectatedPlayerSlotId: 2, spectatedPlayerActualClientId: 10);
+
+        AssertTrue(
+            SpectatorAnchorTargetIdentity.TryCreate(firstSnapshot, anchorInstanceId: 100, out SpectatorAnchorTargetIdentity first),
+            "identity should be created when spectator target exists");
+        AssertTrue(
+            SpectatorAnchorTargetIdentity.TryCreate(secondSnapshot, anchorInstanceId: 200, out SpectatorAnchorTargetIdentity second),
+            "identity should prefer stable player ids over anchor instance");
+
+        AssertTrue(first.Equals(second), "same stable player ids should match even when anchor instance changes");
+    }
+
+    private static void SpectatorAnchorTargetIdentityDetectsActualClientSwitch()
+    {
+        GameSpectatorSnapshot firstSnapshot = CreateSpectatorSnapshot(spectatedPlayerSlotId: 2, spectatedPlayerActualClientId: 10);
+        GameSpectatorSnapshot secondSnapshot = CreateSpectatorSnapshot(spectatedPlayerSlotId: 2, spectatedPlayerActualClientId: 11);
+
+        AssertTrue(
+            SpectatorAnchorTargetIdentity.TryCreate(firstSnapshot, anchorInstanceId: 100, out SpectatorAnchorTargetIdentity first),
+            "identity should be created for first target");
+        AssertTrue(
+            SpectatorAnchorTargetIdentity.TryCreate(secondSnapshot, anchorInstanceId: 100, out SpectatorAnchorTargetIdentity second),
+            "identity should be created for switched target");
+
+        AssertFalse(first.Equals(second), "changed actual client id should be treated as target switch");
+    }
+
+    private static void SpectatorAnchorTargetIdentityFallsBackToAnchorInstance()
+    {
+        GameSpectatorSnapshot firstSnapshot = CreateSpectatorSnapshot(spectatedPlayerSlotId: null, spectatedPlayerActualClientId: null);
+        GameSpectatorSnapshot secondSnapshot = CreateSpectatorSnapshot(spectatedPlayerSlotId: null, spectatedPlayerActualClientId: null);
+
+        AssertTrue(
+            SpectatorAnchorTargetIdentity.TryCreate(firstSnapshot, anchorInstanceId: 30, out SpectatorAnchorTargetIdentity first),
+            "identity should fall back to anchor instance when player ids are unavailable");
+        AssertTrue(
+            SpectatorAnchorTargetIdentity.TryCreate(secondSnapshot, anchorInstanceId: 30, out SpectatorAnchorTargetIdentity matching),
+            "same anchor instance should create matching fallback identity");
+        AssertTrue(
+            SpectatorAnchorTargetIdentity.TryCreate(secondSnapshot, anchorInstanceId: 31, out SpectatorAnchorTargetIdentity changed),
+            "different anchor instance should create different fallback identity");
+
+        AssertTrue(first.Equals(matching), "same fallback anchor instance should match");
+        AssertFalse(first.Equals(changed), "different fallback anchor instance should be treated as target switch");
+    }
+
+    private static void SpectatorTargetAnchorSelectionPrefersStableRoot()
+    {
+        SpectatorTargetAnchorSource source = SpectatorTargetAnchorSelectionRules.Resolve(
+            hasPlayerRoot: true,
+            hasLowerSpine: true,
+            hasGlobalHead: true);
+
+        AssertEqual(
+            SpectatorTargetAnchorSource.PlayerRoot,
+            source,
+            "spectator camera anchor should prefer stable player root over animated bones");
+    }
+
+    private static void SpectatorTargetAnchorSelectionFallsBackToAnimatedBones()
+    {
+        SpectatorTargetAnchorSource lowerSpineSource = SpectatorTargetAnchorSelectionRules.Resolve(
+            hasPlayerRoot: false,
+            hasLowerSpine: true,
+            hasGlobalHead: true);
+        SpectatorTargetAnchorSource headSource = SpectatorTargetAnchorSelectionRules.Resolve(
+            hasPlayerRoot: false,
+            hasLowerSpine: false,
+            hasGlobalHead: true);
+
+        AssertEqual(
+            SpectatorTargetAnchorSource.LowerSpine,
+            lowerSpineSource,
+            "spectator camera anchor should keep lower spine as fallback when root is unavailable");
+        AssertEqual(
+            SpectatorTargetAnchorSource.GlobalHead,
+            headSource,
+            "spectator camera anchor should keep global head as final animated fallback");
+    }
+
+    private static void NameTagTextCacheInvalidatesWhenIdentityRevisionChanges()
+    {
+        AssertTrue(
+            NameTagTextCacheRules.ShouldClear(
+                lastIdentityRevision: 3,
+                currentIdentityRevision: 4,
+                lastUseGamePlayerNames: true,
+                currentUseGamePlayerNames: true,
+                lastUseFallbackIds: true,
+                currentUseFallbackIds: true),
+            "name tag text cache should clear when synced identity revision changes");
+    }
+
+    private static void NameTagTextCacheInvalidatesWhenDisplayConfigChanges()
+    {
+        AssertTrue(
+            NameTagTextCacheRules.ShouldClear(
+                lastIdentityRevision: 4,
+                currentIdentityRevision: 4,
+                lastUseGamePlayerNames: true,
+                currentUseGamePlayerNames: false,
+                lastUseFallbackIds: true,
+                currentUseFallbackIds: true),
+            "name tag text cache should clear when display-name source config changes");
+        AssertFalse(
+            NameTagTextCacheRules.ShouldClear(
+                lastIdentityRevision: 4,
+                currentIdentityRevision: 4,
+                lastUseGamePlayerNames: false,
+                currentUseGamePlayerNames: false,
+                lastUseFallbackIds: true,
+                currentUseFallbackIds: true),
+            "name tag text cache should remain valid when revision and display config are unchanged");
+    }
+
+    private static void FeatureRuntimeDispatchListsKeepsPhaseOrder()
+    {
+        FeatureRuntimeDispatchLists lists = new FeatureRuntimeDispatchLists();
+        RuntimeTickFeature first = new RuntimeTickFeature();
+        RuntimeTickFeature second = new RuntimeTickFeature();
+
+        lists.AddTickable(first);
+        lists.AddTickable(second);
+
+        AssertEqual(2, lists.Tickables.Count, "dispatch list should keep only Update tick features");
+        AssertSame(first, lists.Tickables[0], "dispatch list should keep original phase order");
+        AssertSame(second, lists.Tickables[1], "dispatch list should keep second registered Update feature");
+        AssertEqual(0, lists.LateTickables.Count, "dispatch list should leave unrelated phases empty");
+    }
+
+    private static void FeatureRuntimeDispatchListsAddsFeatureToEveryRegisteredPhase()
+    {
+        FeatureRuntimeDispatchLists lists = new FeatureRuntimeDispatchLists();
+        FullRuntimeFeature feature = new FullRuntimeFeature();
+
+        lists.AddTickable(feature);
+        lists.AddLateTickable(feature);
+        lists.AddCameraPreCullTickable(feature);
+        lists.AddGuiTickable(feature);
+
+        AssertSame(feature, lists.Tickables[0], "dispatch list should include Update phase");
+        AssertSame(feature, lists.LateTickables[0], "dispatch list should include LateUpdate phase");
+        AssertSame(feature, lists.CameraPreCullTickables[0], "dispatch list should include camera pre-cull phase");
+        AssertSame(feature, lists.GuiTickables[0], "dispatch list should include GUI phase");
+    }
+
+    private static void FeatureRuntimeDispatchListsDispatchesCallbacksInPhaseOrder()
+    {
+        FeatureRuntimeDispatchLists lists = new FeatureRuntimeDispatchLists();
+        List<string> calls = new List<string>();
+
+        lists.AddTickable(new RuntimeTickFeature("first", calls));
+        lists.AddTickable(new RuntimeTickFeature("second", calls));
+
+        lists.TickAll();
+
+        AssertEqual(2, calls.Count, "dispatch should call only registered Update phase features");
+        AssertEqual("first", calls[0], "dispatch should keep first registered Update callback");
+        AssertEqual("second", calls[1], "dispatch should keep second registered Update callback");
     }
 
     private static void TargetClientIdTakesPriorityOverSlotFallback()
@@ -552,6 +1087,39 @@ internal static class Program
         AssertFalse(inactiveState.IsSpectating, "retained inactive state should preserve the alive/non-spectating signal");
     }
 
+    private static void RemoteTargetRegistryRevisionChangesOnlyForRepairRelevantChanges()
+    {
+        RemoteSpectatorTargetRegistry registry = new RemoteSpectatorTargetRegistry();
+
+        registry.Update(new SpectatorTargetState(false, 2, 2, null, null, 100));
+        AssertEqual(1, registry.Revision, "target registry revision should change after first state");
+
+        registry.Update(new SpectatorTargetState(false, 2, 2, null, null, 101));
+        AssertEqual(1, registry.Revision, "target registry revision should ignore timestamp-only refresh");
+
+        registry.Update(new SpectatorTargetState(true, 2, 2, 1, 1, 102));
+        AssertEqual(2, registry.Revision, "target registry revision should change when repair-relevant target state changes");
+    }
+
+    private static void RemoteTargetRegistryRevisionChangesOnRemoveAndClear()
+    {
+        RemoteSpectatorTargetRegistry registry = new RemoteSpectatorTargetRegistry();
+        registry.Update(new SpectatorTargetState(false, 2, 2, null, null, 100));
+        registry.Update(new SpectatorTargetState(false, 3, 3, null, null, 101));
+
+        registry.Remove(2);
+        AssertEqual(3, registry.Revision, "target registry revision should change after removing stored state");
+
+        registry.Remove(9);
+        AssertEqual(3, registry.Revision, "target registry revision should ignore missing removals");
+
+        registry.Clear();
+        AssertEqual(4, registry.Revision, "target registry revision should change after non-empty clear");
+
+        registry.Clear();
+        AssertEqual(4, registry.Revision, "target registry revision should ignore empty clear");
+    }
+
     private static void ConnectedAliveVanillaSlotRepairRunsWithoutModIdentity()
     {
         AssertTrue(
@@ -587,6 +1155,91 @@ internal static class Program
                 isPlayerControlled: false,
                 isPlayerDead: false),
             "local player state must not be repaired by remote-slot vanilla repair");
+    }
+
+    private static void PlayerStateRepairScheduleRunsFirstEligibleTick()
+    {
+        AssertTrue(
+            ConnectedPlayerStateRepairScheduleRules.ShouldRunRepair(
+                initialized: true,
+                enabled: true,
+                now: 1f,
+                nextRepairTime: 0f,
+                lastIdentityRevision: -1,
+                currentIdentityRevision: 0,
+                lastTargetRevision: -1,
+                currentTargetRevision: 0,
+                nextIdleFallbackRepairTime: 5f,
+                repeatAfterRepair: false),
+            "player state repair should run once after initialization");
+    }
+
+    private static void PlayerStateRepairScheduleSkipsCleanIdleBeforeFallback()
+    {
+        AssertFalse(
+            ConnectedPlayerStateRepairScheduleRules.ShouldRunRepair(
+                initialized: true,
+                enabled: true,
+                now: 2f,
+                nextRepairTime: 1f,
+                lastIdentityRevision: 3,
+                currentIdentityRevision: 3,
+                lastTargetRevision: 4,
+                currentTargetRevision: 4,
+                nextIdleFallbackRepairTime: 10f,
+                repeatAfterRepair: false),
+            "player state repair should skip clean idle ticks before fallback");
+    }
+
+    private static void PlayerStateRepairScheduleRunsWhenRemoteStateRevisionChanges()
+    {
+        AssertTrue(
+            ConnectedPlayerStateRepairScheduleRules.ShouldRunRepair(
+                initialized: true,
+                enabled: true,
+                now: 2f,
+                nextRepairTime: 1f,
+                lastIdentityRevision: 3,
+                currentIdentityRevision: 4,
+                lastTargetRevision: 4,
+                currentTargetRevision: 4,
+                nextIdleFallbackRepairTime: 10f,
+                repeatAfterRepair: false),
+            "player state repair should run when identity revision changes");
+    }
+
+    private static void PlayerStateRepairScheduleRunsIdleFallbackWithoutRevisionChange()
+    {
+        AssertTrue(
+            ConnectedPlayerStateRepairScheduleRules.ShouldRunRepair(
+                initialized: true,
+                enabled: true,
+                now: 10f,
+                nextRepairTime: 1f,
+                lastIdentityRevision: 3,
+                currentIdentityRevision: 3,
+                lastTargetRevision: 4,
+                currentTargetRevision: 4,
+                nextIdleFallbackRepairTime: 10f,
+                repeatAfterRepair: false),
+            "player state repair should keep a low-frequency vanilla fallback scan");
+    }
+
+    private static void PlayerStateRepairScheduleRepeatsAfterSuccessfulRepair()
+    {
+        AssertTrue(
+            ConnectedPlayerStateRepairScheduleRules.ShouldRunRepair(
+                initialized: true,
+                enabled: true,
+                now: 2f,
+                nextRepairTime: 1f,
+                lastIdentityRevision: 3,
+                currentIdentityRevision: 3,
+                lastTargetRevision: 4,
+                currentTargetRevision: 4,
+                nextIdleFallbackRepairTime: 10f,
+                repeatAfterRepair: true),
+            "player state repair should repeat after a pass repaired state");
     }
 
     private static void VanillaFallbackNameOnlyReplacesGenericLabels()
@@ -690,6 +1343,77 @@ internal static class Program
         }
     }
 
+    private static void RemotePeerIdentityRegistryCopiesIntoCallerOwnedList()
+    {
+        RemotePeerIdentityRegistry registry = new RemotePeerIdentityRegistry();
+        registry.Update(new PeerIdentityState(1, 1, "First", "voice-first", 100));
+        List<PeerIdentityState> destination = new List<PeerIdentityState>();
+
+        registry.CopySnapshotTo(destination);
+
+        AssertEqual(1, destination.Count, "identity registry copy should populate caller-owned list");
+        AssertEqual("First", destination[0].DisplayName, "identity registry copy should preserve stored display name");
+        AssertEqual("voice-first", destination[0].VoicePlayerName, "identity registry copy should preserve stored voice name");
+    }
+
+    private static void RemotePeerIdentityRegistryCopyClearsDestination()
+    {
+        RemotePeerIdentityRegistry registry = new RemotePeerIdentityRegistry();
+        registry.Update(new PeerIdentityState(2, 2, "Second", "voice-second", 200));
+        List<PeerIdentityState> destination = new List<PeerIdentityState>
+        {
+            new PeerIdentityState(9, 9, "Stale", "voice-stale", 90),
+        };
+
+        registry.CopySnapshotTo(destination);
+
+        AssertEqual(1, destination.Count, "identity registry copy should replace previous destination contents");
+        AssertEqual(2UL, destination[0].ClientId, "identity registry copy should remove stale caller-owned entries");
+    }
+
+    private static void RemoteIdentityRegistryRevisionIgnoresOlderIdentity()
+    {
+        RemotePeerIdentityRegistry registry = new RemotePeerIdentityRegistry();
+
+        registry.Update(new PeerIdentityState(2, 2, "First", "voice-first", 100));
+        registry.Update(new PeerIdentityState(2, 2, "Older", "voice-old", 99));
+
+        AssertEqual(1, registry.Revision, "identity registry revision should ignore older identity state");
+        AssertTrue(registry.TryGet(2, out PeerIdentityState stored), "identity should remain stored");
+        AssertEqual("First", stored.DisplayName, "older identity should not replace stored identity");
+    }
+
+    private static void RemoteIdentityRegistryRevisionChangesOnlyForStoredIdentityChanges()
+    {
+        RemotePeerIdentityRegistry registry = new RemotePeerIdentityRegistry();
+
+        registry.Update(new PeerIdentityState(2, 2, "First", "voice-first", 100));
+        registry.Update(new PeerIdentityState(2, 2, "First", "voice-first", 101));
+        AssertEqual(1, registry.Revision, "identity registry revision should ignore timestamp-only refresh");
+
+        registry.Update(new PeerIdentityState(2, 2, "Second", "voice-first", 102));
+        AssertEqual(2, registry.Revision, "identity registry revision should change when display name changes");
+    }
+
+    private static void RemoteIdentityRegistryRevisionChangesOnRemoveAndClear()
+    {
+        RemotePeerIdentityRegistry registry = new RemotePeerIdentityRegistry();
+        registry.Update(new PeerIdentityState(2, 2, "First", "voice-first", 100));
+        registry.Update(new PeerIdentityState(3, 3, "Second", "voice-second", 101));
+
+        registry.Remove(2);
+        AssertEqual(3, registry.Revision, "identity registry revision should change after removing stored identity");
+
+        registry.Remove(9);
+        AssertEqual(3, registry.Revision, "identity registry revision should ignore missing removals");
+
+        registry.Clear();
+        AssertEqual(4, registry.Revision, "identity registry revision should change after non-empty clear");
+
+        registry.Clear();
+        AssertEqual(4, registry.Revision, "identity registry revision should ignore empty clear");
+    }
+
     private static void DetachedHeadVisualSourceRequiresConfigAndSource()
     {
         AssertFalse(
@@ -770,6 +1494,36 @@ internal static class Program
         AssertTrue(
             FloatingHeadRotationRules.DefaultRuntimeDetachedHeadRollOffsetDegrees == 0f,
             "default detached-head roll correction should match the calibrated runtime template orientation");
+    }
+
+    private static void FloatingHeadFrameUpdateRequiresFullUpdateWithoutCache()
+    {
+        AssertTrue(
+            FloatingHeadFrameUpdateRules.ShouldRunFullVisualUpdate(
+                currentFrame: 10,
+                lastFullUpdateFrame: 10,
+                hasCachedVisualState: false),
+            "pre-cull should run a full visual update when no cached visual state exists");
+    }
+
+    private static void FloatingHeadFrameUpdateUsesCameraOnlyAfterSameFrameFullUpdate()
+    {
+        AssertFalse(
+            FloatingHeadFrameUpdateRules.ShouldRunFullVisualUpdate(
+                currentFrame: 10,
+                lastFullUpdateFrame: 10,
+                hasCachedVisualState: true),
+            "pre-cull should use camera-only pose refresh after same-frame full update");
+    }
+
+    private static void FloatingHeadFrameUpdateRequiresFullUpdateOnNewFrame()
+    {
+        AssertTrue(
+            FloatingHeadFrameUpdateRules.ShouldRunFullVisualUpdate(
+                currentFrame: 11,
+                lastFullUpdateFrame: 10,
+                hasCachedVisualState: true),
+            "pre-cull should run a full visual update when no full update happened this frame");
     }
 
     private static void SpeakingWithZeroAmplitudeUsesFallbackPulseLevel()
@@ -1321,6 +2075,113 @@ internal static class Program
             "voice routing should not treat target/voice-activity capability as voice routing opt-in");
     }
 
+    private static void SpectatorVoicePlayerLookupCachePrefersClientIdOverSlotFallback()
+    {
+        SpectatorVoicePlayerLookupCache<string> cache = new SpectatorVoicePlayerLookupCache<string>();
+        cache.Store("slot-only", clientId: 5, slotId: 7);
+        cache.Store("client-match", clientId: 2, slotId: 9);
+
+        AssertTrue(cache.TryGet(clientId: 2, slotId: 7, out string player), "voice player lookup should find a cached player");
+        AssertEqual("client-match", player, "voice player lookup should prefer actual client id over slot fallback");
+    }
+
+    private static void SpectatorVoicePlayerLookupCacheKeepsFirstClientMatch()
+    {
+        SpectatorVoicePlayerLookupCache<string> cache = new SpectatorVoicePlayerLookupCache<string>();
+        cache.Store("first", clientId: 2, slotId: 2);
+        cache.Store("second", clientId: 2, slotId: 3);
+
+        AssertTrue(cache.TryGet(clientId: 2, slotId: 3, out string player), "voice player lookup should find duplicate client id");
+        AssertEqual("first", player, "voice player lookup should keep first client match to preserve scan order");
+    }
+
+    private static void SpectatorVoicePlayerLookupCacheKeepsFirstSlotFallbackMatch()
+    {
+        SpectatorVoicePlayerLookupCache<string> cache = new SpectatorVoicePlayerLookupCache<string>();
+        cache.Store("first", clientId: 2, slotId: 4);
+        cache.Store("second", clientId: 3, slotId: 4);
+
+        AssertTrue(cache.TryGet(clientId: 9, slotId: 4, out string player), "voice player lookup should find duplicate slot id fallback");
+        AssertEqual("first", player, "voice player lookup should keep first slot fallback match to preserve scan order");
+    }
+
+    private static void SpectatorVoicePlayerLookupCacheClearRemovesStaleEntries()
+    {
+        SpectatorVoicePlayerLookupCache<string> cache = new SpectatorVoicePlayerLookupCache<string>();
+        cache.Store("player", clientId: 2, slotId: 2);
+
+        cache.Clear();
+
+        AssertFalse(cache.TryGet(clientId: 2, slotId: 2, out _), "voice player lookup clear should remove cached entries");
+    }
+
+    private static void ModLogDebugEnabledReflectsConfiguredGate()
+    {
+        ModLog.SetDebugEnabled(false);
+        AssertFalse(ModLog.IsDebugEnabled, "debug log gate should report disabled state");
+
+        ModLog.SetDebugEnabled(true);
+        AssertTrue(ModLog.IsDebugEnabled, "debug log gate should report enabled state");
+
+        ModLog.SetDebugEnabled(false);
+    }
+
+    private static void SpectatorInputKeyCacheReusesResolvedBinding()
+    {
+        int resolveCalls = 0;
+        SpectatorInputKeyCache cache = new SpectatorInputKeyCache(
+            key =>
+            {
+                resolveCalls++;
+                return new SpectatorInputKeyResolution(true, InputKey.F);
+            });
+
+        AssertTrue(cache.TryResolve(KeyCode.F, out InputKey first), "input key cache should resolve mapped key");
+        AssertTrue(cache.TryResolve(KeyCode.F, out InputKey second), "input key cache should reuse mapped key");
+
+        AssertEqual(InputKey.F, first, "input key cache should return resolved input key");
+        AssertEqual(InputKey.F, second, "input key cache should keep cached input key");
+        AssertEqual(1, resolveCalls, "input key cache should not remap unchanged configured key");
+    }
+
+    private static void SpectatorInputKeyCacheRefreshesWhenConfiguredKeyChanges()
+    {
+        int resolveCalls = 0;
+        SpectatorInputKeyCache cache = new SpectatorInputKeyCache(
+            key =>
+            {
+                resolveCalls++;
+                return key == KeyCode.G
+                    ? new SpectatorInputKeyResolution(true, InputKey.G)
+                    : new SpectatorInputKeyResolution(true, InputKey.F);
+            });
+
+        AssertTrue(cache.TryResolve(KeyCode.F, out InputKey first), "input key cache should resolve first configured key");
+        AssertTrue(cache.TryResolve(KeyCode.G, out InputKey second), "input key cache should resolve changed configured key");
+
+        AssertEqual(InputKey.F, first, "input key cache should return first mapping");
+        AssertEqual(InputKey.G, second, "input key cache should update mapping after config change");
+        AssertEqual(2, resolveCalls, "input key cache should remap only when configured key changes");
+    }
+
+    private static void SpectatorInputKeyCacheCachesUnmappedBindings()
+    {
+        int resolveCalls = 0;
+        SpectatorInputKeyCache cache = new SpectatorInputKeyCache(
+            key =>
+            {
+                resolveCalls++;
+                return new SpectatorInputKeyResolution(false, InputKey.None);
+            });
+
+        AssertFalse(cache.TryResolve(KeyCode.None, out InputKey first), "input key cache should reject unmapped key");
+        AssertFalse(cache.TryResolve(KeyCode.None, out InputKey second), "input key cache should reuse unmapped key");
+
+        AssertEqual(InputKey.None, first, "input key cache should return no input key for unmapped binding");
+        AssertEqual(InputKey.None, second, "input key cache should keep unmapped input key");
+        AssertEqual(1, resolveCalls, "input key cache should cache unmapped configured key");
+    }
+
     private static void SpectatorVoiceDistanceAttenuationScalesVolumeByDistance()
     {
         AssertNear(
@@ -1482,6 +2343,203 @@ internal static class Program
             "voice route diagnostics should log again after the interval");
     }
 
+    private static GameSpectatorSnapshot CreateSpectatorSnapshot(
+        ulong? spectatedPlayerSlotId,
+        ulong? spectatedPlayerActualClientId)
+    {
+        return new GameSpectatorSnapshot(
+            hasRound: true,
+            hasLocalPlayer: true,
+            isLocalPlayerDead: true,
+            hasBegunSpectating: true,
+            hasSpectatedTarget: true,
+            isGameOverOverride: false,
+            isSpectateCameraActive: true,
+            spectateCamera: null,
+            anchor: null,
+            localPlayerSlotId: 0,
+            localPlayerActualClientId: 0,
+            spectatedPlayerSlotId,
+            spectatedPlayerActualClientId);
+    }
+
+    private sealed class CountingGameSpectatorAdapter : IGameSpectatorAdapter
+    {
+        public int SnapshotCalls { get; private set; }
+
+        public bool SnapshotResult { get; set; } = true;
+
+        public bool ThrowOnSnapshot { get; set; }
+
+        public GameSpectatorSnapshot Snapshot { get; set; } =
+            CreateSpectatorSnapshot(spectatedPlayerSlotId: 1, spectatedPlayerActualClientId: 1);
+
+        public SpectatorState ReadSpectatorState()
+        {
+            return SpectatorState.Unavailable;
+        }
+
+        public bool TryGetLocalSpectatorSnapshot(out GameSpectatorSnapshot snapshot)
+        {
+            SnapshotCalls++;
+            if (ThrowOnSnapshot)
+            {
+                throw new InvalidOperationException("snapshot adapter failed");
+            }
+
+            snapshot = SnapshotResult ? Snapshot : GameSpectatorSnapshot.Unavailable;
+            return SnapshotResult;
+        }
+
+        public bool IsLocalPlayerSpectating()
+        {
+            return false;
+        }
+
+        public bool TryGetSpectatedPlayerAnchor(out Transform? anchor)
+        {
+            anchor = null;
+            return false;
+        }
+
+        public bool TryGetSpectateCamera(out Camera? camera)
+        {
+            camera = null;
+            return false;
+        }
+
+        public bool TryGetActiveCamera(out Camera? camera)
+        {
+            camera = null;
+            return false;
+        }
+
+        public bool IsGameOverSpectateOverrideActive()
+        {
+            return false;
+        }
+
+        public bool IsLocalQuickMenuOpen()
+        {
+            return false;
+        }
+
+        public bool IsValidSpectateTarget(object? target)
+        {
+            _ = target;
+            return false;
+        }
+
+        public bool TryGetSpectatedPlayerId(out ulong slotId, out ulong actualClientId)
+        {
+            slotId = 0;
+            actualClientId = 0;
+            return false;
+        }
+
+        public bool TryGetLocalPlayerIdentity(out ulong clientId, out ulong slotId)
+        {
+            clientId = 0;
+            slotId = 0;
+            return false;
+        }
+
+        public bool TryGetPlayerDisplayName(ulong clientId, ulong slotId, out string displayName)
+        {
+            _ = clientId;
+            _ = slotId;
+            displayName = string.Empty;
+            return false;
+        }
+
+        public bool TryGetLocalVoicePlayerName(out string voicePlayerName)
+        {
+            voicePlayerName = string.Empty;
+            return false;
+        }
+
+        public bool TryGetLocalPlayerHeadPoint(out Transform? anchor)
+        {
+            anchor = null;
+            return false;
+        }
+
+        public bool TryGetLocalPlayerHeadAnchor(out Transform? anchor)
+        {
+            anchor = null;
+            return false;
+        }
+
+        public bool TryGetLocalPlayerHeadAnchorPosition(out Vector3 position)
+        {
+            position = Vector3.zero;
+            return false;
+        }
+    }
+
+    private sealed class RuntimeTickFeature : IFeatureModule, IRuntimeTickable
+    {
+        private readonly List<string>? _calls;
+        private readonly string _name;
+
+        public RuntimeTickFeature()
+        {
+            _name = string.Empty;
+        }
+
+        public RuntimeTickFeature(string name, List<string> calls)
+        {
+            _name = name;
+            _calls = calls;
+        }
+
+        public void Initialize()
+        {
+        }
+
+        public void Dispose()
+        {
+        }
+
+        public void Tick()
+        {
+            _calls?.Add(_name);
+        }
+    }
+
+    private sealed class FullRuntimeFeature :
+        IFeatureModule,
+        IRuntimeTickable,
+        IRuntimeLateTickable,
+        IRuntimeCameraPreCullTickable,
+        IRuntimeGuiTickable
+    {
+        public void Initialize()
+        {
+        }
+
+        public void Dispose()
+        {
+        }
+
+        public void Tick()
+        {
+        }
+
+        public void LateTick()
+        {
+        }
+
+        public void CameraPreCullTick(Camera camera)
+        {
+            _ = camera;
+        }
+
+        public void GuiTick()
+        {
+        }
+    }
+
     private static void AssertSequence(IReadOnlyList<ulong> expected, IReadOnlyList<ulong> actual, string message)
     {
         if (expected.Count != actual.Count)
@@ -1509,6 +2567,36 @@ internal static class Program
     private static void AssertFalse(bool condition, string message)
     {
         if (condition)
+        {
+            throw new InvalidOperationException(message);
+        }
+    }
+
+    private static void AssertStruct<T>(string message)
+        where T : struct
+    {
+        _ = message;
+    }
+
+    private static void AssertThrows<TException>(Action action, string message)
+        where TException : Exception
+    {
+        try
+        {
+            action();
+        }
+        catch (TException)
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(message);
+    }
+
+    private static void AssertSame<T>(T expected, T actual, string message)
+        where T : class
+    {
+        if (!ReferenceEquals(expected, actual))
         {
             throw new InvalidOperationException(message);
         }

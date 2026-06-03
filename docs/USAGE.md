@@ -21,6 +21,8 @@ Forward and backward movement follows the camera look direction, so looking down
 
 While enhanced freecam is active, holding the configured ascend or descend key suppresses vanilla spectator target switching for that input frame. This keeps the default `Space` ascend key from being stolen by vanilla spectator controls.
 
+When the player currently being watched disconnects and another living player is available, Enhanced Spectator invokes vanilla target switching once after disconnect cleanup so the spectator view does not remain attached to the disconnected player's off-map model.
+
 ## Config
 
 BepInEx writes the config file after the plugin has run once.

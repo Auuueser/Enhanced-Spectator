@@ -16,10 +16,14 @@ public sealed class LethalCompanySpectatorVoiceRoutingAdapter : IGameSpectatorVo
 {
     private readonly Dictionary<ulong, PlaybackSnapshot> _snapshots = new Dictionary<ulong, PlaybackSnapshot>();
     private readonly Dictionary<ulong, float> _nextPlaybackResolveTime = new Dictionary<ulong, float>();
+    private readonly SpectatorVoicePlayerLookupCache<PlayerControllerB> _playerLookupCache =
+        new SpectatorVoicePlayerLookupCache<PlayerControllerB>();
     private readonly SpectatorVoiceRouteDiagnosticLimiter _diagnosticLimiter = new SpectatorVoiceRouteDiagnosticLimiter();
     private readonly HashSet<ulong> _fallbackBindingLogged = new HashSet<ulong>();
     private readonly IEnhancedSpectatorNetworkService? _networkService;
     private readonly System.Func<bool> _debugEnabled;
+    private PlayerControllerB[]? _cachedPlayerScripts;
+    private int _playerLookupCacheFrame = -1;
 
     /// <summary>
     /// Creates a spectator voice routing adapter.
@@ -241,6 +245,12 @@ public sealed class LethalCompanySpectatorVoiceRoutingAdapter : IGameSpectatorVo
         _fallbackBindingLogged.Remove(spectatorSlotId);
         _nextPlaybackResolveTime.Remove(spectatorClientId);
         _nextPlaybackResolveTime.Remove(spectatorSlotId);
+    }
+
+    /// <inheritdoc />
+    public void ClearCachedVoiceRouteLookups()
+    {
+        ClearPlayerLookupCache();
     }
 
     private bool EnsureVoicePlayback(StartOfRound round, PlayerControllerB player, PeerIdentityState? identity)
@@ -471,40 +481,46 @@ public sealed class LethalCompanySpectatorVoiceRoutingAdapter : IGameSpectatorVo
         return string.IsNullOrWhiteSpace(value) ? "none" : "present";
     }
 
-    private static PlayerControllerB? FindPlayer(StartOfRound round, ulong clientId, ulong slotId)
+    private PlayerControllerB? FindPlayer(StartOfRound round, ulong clientId, ulong slotId)
     {
-        if (round.allPlayerScripts == null)
+        PlayerControllerB[]? players = round.allPlayerScripts;
+        if (players == null)
         {
+            ClearPlayerLookupCache();
             return null;
         }
 
-        foreach (PlayerControllerB player in round.allPlayerScripts)
+        int frame = Time.frameCount;
+        if (_playerLookupCacheFrame != frame || _cachedPlayerScripts != players)
         {
+            RebuildPlayerLookupCache(players, frame);
+        }
+
+        return _playerLookupCache.TryGet(clientId, slotId, out PlayerControllerB player) ? player : null;
+    }
+
+    private void RebuildPlayerLookupCache(PlayerControllerB[] players, int frame)
+    {
+        _playerLookupCache.Clear();
+        _cachedPlayerScripts = players;
+        _playerLookupCacheFrame = frame;
+        for (int index = 0; index < players.Length; index++)
+        {
+            PlayerControllerB player = players[index];
             if (player == null)
             {
                 continue;
             }
 
-            if (player.actualClientId == clientId)
-            {
-                return player;
-            }
+            _playerLookupCache.Store(player, player.actualClientId, player.playerClientId);
         }
+    }
 
-        foreach (PlayerControllerB player in round.allPlayerScripts)
-        {
-            if (player == null)
-            {
-                continue;
-            }
-
-            if (player.playerClientId == slotId)
-            {
-                return player;
-            }
-        }
-
-        return null;
+    private void ClearPlayerLookupCache()
+    {
+        _playerLookupCache.Clear();
+        _cachedPlayerScripts = null;
+        _playerLookupCacheFrame = -1;
     }
 
     private static VoiceListenerFrame ResolveVoiceListenerFrame(StartOfRound round)

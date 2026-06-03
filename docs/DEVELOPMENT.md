@@ -1,32 +1,38 @@
 # Development
 
-## Requirements
+## Scope
 
-- .NET SDK 8 or newer.
-- Local Lethal Company install for game assembly references.
-- BepInEx runtime for manual in-game testing.
+This repository contains the first client-local spectator freecam MVP. New gameplay work should still be limited to confirmed Lethal Company APIs and routed through `GameInterop`.
 
-## Build
+## Build Commands
 
 ```powershell
 dotnet restore
+dotnet build
+```
+
+Use a custom game path when needed:
+
+```powershell
 dotnet build -p:GameDir="D:\Steam\steamapps\common\Lethal Company"
 ```
 
-The `GameDir` value is an example. Use the path to your local Lethal Company installation.
+## Code Rules
 
-## Tests
+- Keep plugin startup logic in `Plugin`.
+- Keep config entries in `Config`.
+- Keep log calls behind `ModLog`.
+- Keep Harmony registration in `Patching`.
+- Keep game API access behind `GameInterop`.
+- Do not invent game member names.
+- Do not use reflection helpers or Harmony member traversal helpers to access game members.
+
+## Local Runtime Testing
+
+After a successful build, copy the generated mod DLL into the local BepInEx plugin folder for manual testing:
 
 ```powershell
-dotnet run --project tests\EnhancedSpectator.Tests\EnhancedSpectator.Tests.csproj --no-restore
+$(GameDir)\BepInEx\plugins
 ```
 
-## Repository Safety
-
-- Do not commit game DLLs.
-- Do not commit decompiled game files.
-- Do not commit Unity assets, prefabs, materials, meshes, bundles, or BepInEx runtime contents.
-- Do not commit logs or local mod-manager profile files.
-- Do not use reflection to access Lethal Company members.
-
-Game-specific access should stay isolated in `GameInterop` adapters.
+Do not commit the copied DLL or any files from the game directory.

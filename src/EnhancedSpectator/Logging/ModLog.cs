@@ -20,6 +20,11 @@ public static class ModLog
     }
 
     /// <summary>
+    /// Gets whether verbose debug logging is currently enabled.
+    /// </summary>
+    public static bool IsDebugEnabled => _debugEnabled;
+
+    /// <summary>
     /// Enables or disables verbose debug logging.
     /// </summary>
     public static void SetDebugEnabled(bool enabled)

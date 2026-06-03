@@ -23,6 +23,7 @@ namespace EnhancedSpectator.Features;
 public sealed class FeatureBootstrapper : IDisposable
 {
     private readonly List<IFeatureModule> _features = new List<IFeatureModule>();
+    private readonly FeatureRuntimeDispatchLists _runtimeDispatchLists = new FeatureRuntimeDispatchLists();
     private bool _initialized;
 
     /// <summary>
@@ -36,6 +37,14 @@ public sealed class FeatureBootstrapper : IDisposable
             SpectatorFreecamSettings freecamSettings = new SpectatorFreecamSettings(config);
             SpectatorModule spectatorModule = new SpectatorModule(gameSpectatorAdapter, freecamSettings);
             _features.Add(spectatorModule);
+            _runtimeDispatchLists.AddTickable(spectatorModule);
+            _runtimeDispatchLists.AddLateTickable(spectatorModule);
+            _runtimeDispatchLists.AddCameraPreCullTickable(spectatorModule);
+
+            SpectatorDisconnectTargetSwitchService disconnectTargetSwitchService =
+                new SpectatorDisconnectTargetSwitchService(new LethalCompanySpectatorTargetSwitchAdapter());
+            _features.Add(disconnectTargetSwitchService);
+            _runtimeDispatchLists.AddTickable(disconnectTargetSwitchService);
 
             if (config.EnableNetworking.Value)
             {
@@ -47,23 +56,36 @@ public sealed class FeatureBootstrapper : IDisposable
                     spectatorModule,
                     voiceActivityProvider,
                     new UnityNetcodeMessagingTransport(() => config.DebugNetworkMessages.Value));
-                _features.Add(new NetworkingModule(networkService));
-                _features.Add(new ConnectedPlayerStateRepairModule(
+                NetworkingModule networkingModule = new NetworkingModule(networkService);
+                _features.Add(networkingModule);
+                _runtimeDispatchLists.AddTickable(networkingModule);
+
+                ConnectedPlayerStateRepairModule playerStateRepairModule = new ConnectedPlayerStateRepairModule(
                     config,
                     networkService,
-                    new LethalCompanyConnectedPlayerStateRepairAdapter()));
+                    new LethalCompanyConnectedPlayerStateRepairAdapter());
+                _features.Add(playerStateRepairModule);
+                _runtimeDispatchLists.AddTickable(playerStateRepairModule);
+
                 SpectatorPresenceService presenceService = new SpectatorPresenceService(
                     config,
                     gameSpectatorAdapter,
                     networkService);
-                _features.Add(new SpectatorPresenceModule(presenceService));
-                _features.Add(new SpectatorVoiceRoutingModule(
+                SpectatorPresenceModule presenceModule = new SpectatorPresenceModule(presenceService);
+                _features.Add(presenceModule);
+                _runtimeDispatchLists.AddTickable(presenceModule);
+
+                SpectatorVoiceRoutingModule voiceRoutingModule = new SpectatorVoiceRoutingModule(
                     new SpectatorVoiceRoutingService(
                         config,
                         networkService,
                         new LethalCompanySpectatorVoiceRoutingAdapter(
                             networkService,
-                            () => config.EnableDebugLogging.Value && config.DebugSpectatorVoiceRouting.Value))));
+                            () => ModLog.IsDebugEnabled
+                                && config.EnableDebugLogging.Value
+                                && config.DebugSpectatorVoiceRouting.Value)));
+                _features.Add(voiceRoutingModule);
+                _runtimeDispatchLists.AddLateTickable(voiceRoutingModule);
 
                 if (config.EnableFloatingHeadVisuals.Value)
                 {
@@ -75,34 +97,44 @@ public sealed class FeatureBootstrapper : IDisposable
                         new LethalCompanyDetachedHeadVisualSourceAdapter(),
                         new FloatingHeadPlacementService(gameSpectatorAdapter),
                         new PlaceholderHeadVisualFactory());
-                    _features.Add(new FloatingHeadModule(visualService));
+                    FloatingHeadModule floatingHeadModule = new FloatingHeadModule(visualService);
+                    _features.Add(floatingHeadModule);
+                    _runtimeDispatchLists.AddLateTickable(floatingHeadModule);
+                    _runtimeDispatchLists.AddCameraPreCullTickable(floatingHeadModule);
+                    _runtimeDispatchLists.AddGuiTickable(floatingHeadModule);
                 }
             }
         }
 
         if (config.EnableModelInspection.Value)
         {
-            _features.Add(new ModelInspectionModule(
+            ModelInspectionModule modelInspectionModule = new ModelInspectionModule(
                 config,
-                new PlayerModelInspectionService(config, new LethalCompanyPlayerModelInspectionAdapter())));
+                new PlayerModelInspectionService(config, new LethalCompanyPlayerModelInspectionAdapter()));
+            _features.Add(modelInspectionModule);
+            _runtimeDispatchLists.AddTickable(modelInspectionModule);
         }
 
         if (config.EnableRuntimeHeadSourceInspection.Value)
         {
-            _features.Add(new DeadBodyHeadSourceInspectionModule(
+            DeadBodyHeadSourceInspectionModule headSourceInspectionModule = new DeadBodyHeadSourceInspectionModule(
                 config,
                 new DeadBodyHeadSourceInspectionService(
                     config,
-                    new LethalCompanyDeadBodyHeadSourceInspectionAdapter())));
+                    new LethalCompanyDeadBodyHeadSourceInspectionAdapter()));
+            _features.Add(headSourceInspectionModule);
+            _runtimeDispatchLists.AddTickable(headSourceInspectionModule);
         }
 
         if (config.EnableVoiceDiagnostics.Value)
         {
-            _features.Add(new VoiceDiagnosticsModule(
+            VoiceDiagnosticsModule voiceDiagnosticsModule = new VoiceDiagnosticsModule(
                 config,
                 new VoiceDiagnosticsService(
                     config,
-                    new LethalCompanyVoiceDiagnosticsAdapter())));
+                    new LethalCompanyVoiceDiagnosticsAdapter()));
+            _features.Add(voiceDiagnosticsModule);
+            _runtimeDispatchLists.AddTickable(voiceDiagnosticsModule);
         }
     }
 
@@ -135,13 +167,7 @@ public sealed class FeatureBootstrapper : IDisposable
             return;
         }
 
-        foreach (IFeatureModule feature in _features)
-        {
-            if (feature is IRuntimeTickable tickable)
-            {
-                tickable.Tick();
-            }
-        }
+        _runtimeDispatchLists.TickAll();
     }
 
     /// <summary>
@@ -154,13 +180,7 @@ public sealed class FeatureBootstrapper : IDisposable
             return;
         }
 
-        foreach (IFeatureModule feature in _features)
-        {
-            if (feature is IRuntimeLateTickable lateTickable)
-            {
-                lateTickable.LateTick();
-            }
-        }
+        _runtimeDispatchLists.LateTickAll();
     }
 
     /// <summary>
@@ -173,13 +193,7 @@ public sealed class FeatureBootstrapper : IDisposable
             return;
         }
 
-        foreach (IFeatureModule feature in _features)
-        {
-            if (feature is IRuntimeCameraPreCullTickable cameraPreCullTickable)
-            {
-                cameraPreCullTickable.CameraPreCullTick(camera);
-            }
-        }
+        _runtimeDispatchLists.CameraPreCullTickAll(camera);
     }
 
     /// <summary>
@@ -192,13 +206,7 @@ public sealed class FeatureBootstrapper : IDisposable
             return;
         }
 
-        foreach (IFeatureModule feature in _features)
-        {
-            if (feature is IRuntimeGuiTickable guiTickable)
-            {
-                guiTickable.GuiTick();
-            }
-        }
+        _runtimeDispatchLists.GuiTickAll();
     }
 
     /// <summary>

@@ -11,6 +11,7 @@ public static class SpectatorVanillaInputGuard
     private static KeyCode _ascendKey = KeyCode.None;
     private static KeyCode _descendKey = KeyCode.None;
     private static bool _quickMenuBlocksInput;
+    private static int _internalTargetSwitchDepth;
 
     /// <summary>
     /// Updates the current input state that should suppress vanilla spectator controls.
@@ -36,6 +37,26 @@ public static class SpectatorVanillaInputGuard
         _ascendKey = KeyCode.None;
         _descendKey = KeyCode.None;
         _quickMenuBlocksInput = false;
+        _internalTargetSwitchDepth = 0;
+    }
+
+    /// <summary>
+    /// Marks a mod-owned vanilla target switch that should not be suppressed as local input.
+    /// </summary>
+    public static void BeginInternalTargetSwitch()
+    {
+        _internalTargetSwitchDepth++;
+    }
+
+    /// <summary>
+    /// Clears a mod-owned vanilla target switch scope.
+    /// </summary>
+    public static void EndInternalTargetSwitch()
+    {
+        if (_internalTargetSwitchDepth > 0)
+        {
+            _internalTargetSwitchDepth--;
+        }
     }
 
     /// <summary>
@@ -43,15 +64,20 @@ public static class SpectatorVanillaInputGuard
     /// </summary>
     public static bool ShouldSuppressTargetSwitchInput(out string reason)
     {
-        if (_freecamWantsVerticalInput
-            && (SpectatorInputService.IsKeyHeld(_ascendKey) || SpectatorInputService.IsKeyHeld(_descendKey)))
+        bool ascendKeyHeld = false;
+        bool descendKeyHeld = false;
+        if (_freecamWantsVerticalInput && _internalTargetSwitchDepth <= 0)
         {
-            reason = "freecam vertical movement is held";
-            return true;
+            ascendKeyHeld = SpectatorInputService.IsKeyHeld(_ascendKey);
+            descendKeyHeld = SpectatorInputService.IsKeyHeld(_descendKey);
         }
 
-        reason = string.Empty;
-        return false;
+        return SpectatorVanillaInputGuardRules.ShouldSuppressTargetSwitchInput(
+            _internalTargetSwitchDepth > 0,
+            _freecamWantsVerticalInput,
+            ascendKeyHeld,
+            descendKeyHeld,
+            out reason);
     }
 
     /// <summary>

@@ -34,16 +34,24 @@ public sealed class FloatingHeadVisualService : IDisposable
     private readonly HashSet<ulong> _voiceDataLoggedSpectators = new HashSet<ulong>();
     private readonly HashSet<ulong> _voiceDataActiveSpectators = new HashSet<ulong>();
     private readonly HashSet<ulong> _visualSkipLoggedSpectators = new HashSet<ulong>();
+    private readonly Dictionary<ulong, NameTagTextCacheEntry> _nameTagTextCache =
+        new Dictionary<ulong, NameTagTextCacheEntry>();
 
     private Texture2D? _screenMarkerTexture;
     private Transform? _detachedHeadTemplateSource;
+    private Vector3 _lastAnchorPosition;
     private float _lastPresenceSeenUnscaledTime = float.NegativeInfinity;
+    private int _lastFullUpdateFrame = -1;
     private bool _anchorLostLogged;
     private bool _disposed;
     private bool _disabledDueToError;
     private bool _voiceProviderDisabled;
     private bool _presenceGraceLogged;
     private bool _layerWarningLogged;
+    private bool _hasCachedVisualState;
+    private int _cachedNameTagIdentityRevision = int.MinValue;
+    private bool _cachedNameTagUseGamePlayerNames;
+    private bool _cachedNameTagUseFallbackIds;
 
     /// <summary>
     /// Creates a floating-head visual service.
@@ -78,6 +86,14 @@ public sealed class FloatingHeadVisualService : IDisposable
 
         try
         {
+            if (!FloatingHeadFrameUpdateRules.ShouldRunFullVisualUpdate(
+                Time.frameCount,
+                _lastFullUpdateFrame,
+                _hasCachedVisualState))
+            {
+                return;
+            }
+
             TickCore(renderingCamera: null, poseSource: "LateUpdate", logPose: _config.DebugVisualLifecycle.Value);
         }
         catch (Exception ex)
@@ -100,7 +116,16 @@ public sealed class FloatingHeadVisualService : IDisposable
 
         try
         {
-            TickCore(camera, "PreCull", logPose: true);
+            if (FloatingHeadFrameUpdateRules.ShouldRunFullVisualUpdate(
+                Time.frameCount,
+                _lastFullUpdateFrame,
+                _hasCachedVisualState))
+            {
+                TickCore(camera, "PreCull", logPose: true);
+                return;
+            }
+
+            UpdateCameraOnlyPose(camera, "PreCull", logPose: true);
         }
         catch (Exception ex)
         {
@@ -209,12 +234,32 @@ public sealed class FloatingHeadVisualService : IDisposable
 
         _anchorLostLogged = false;
         IReadOnlyList<RemoteSpectatorInfo> spectators = SortSpectators(presence.RemoteSpectators);
+        _lastAnchorPosition = anchorPosition;
+        _hasCachedVisualState = true;
+        _lastFullUpdateFrame = Time.frameCount;
         SyncVisuals(spectators);
-        UpdateVisualPoses(anchorPosition, spectators, renderingCamera, poseSource, logPose);
+        UpdateVisualPoses(anchorPosition, spectators, renderingCamera, poseSource, logPose, updateDynamicState: true);
+    }
+
+    private void UpdateCameraOnlyPose(Camera renderingCamera, string poseSource, bool logPose)
+    {
+        if (!_hasCachedVisualState || _visuals.Count == 0 || _sortedSpectators.Count == 0)
+        {
+            return;
+        }
+
+        UpdateVisualPoses(
+            _lastAnchorPosition,
+            _sortedSpectators,
+            renderingCamera,
+            poseSource,
+            logPose,
+            updateDynamicState: false);
     }
 
     private void ClearForPresenceLost()
     {
+        InvalidateCachedVisualState();
         if (_config.DestroyOnPresenceLost.Value)
         {
             DestroyAll("presence lost");
@@ -334,7 +379,8 @@ public sealed class FloatingHeadVisualService : IDisposable
         IReadOnlyList<RemoteSpectatorInfo> spectators,
         Camera? renderingCamera,
         string poseSource,
-        bool logPose)
+        bool logPose,
+        bool updateDynamicState)
     {
         int visualCount = spectators.Count;
         for (int index = 0; index < visualCount; index++)
@@ -345,8 +391,14 @@ public sealed class FloatingHeadVisualService : IDisposable
                 continue;
             }
 
-            float scale = CalculateVisualScale(spectator, visual);
-            UpdateNameTagText(spectator, visual);
+            float scale = updateDynamicState
+                ? CalculateVisualScale(spectator, visual)
+                : visual.CurrentScale;
+            if (updateDynamicState)
+            {
+                UpdateNameTagText(spectator, visual);
+            }
+
             if (TryGetRemoteSpectatorPose(
                 spectator,
                 visual.SourceKind,
@@ -444,7 +496,13 @@ public sealed class FloatingHeadVisualService : IDisposable
         FloatingHeadVisualSourceKind sourceKind,
         Transform? detachedHeadSource)
     {
-        string nameTagText = FormatNameTagText(spectator);
+        string nameTagText = FormatNameTagText(spectator, out bool canCacheNameTagText);
+        if (canCacheNameTagText)
+        {
+            _nameTagTextCache[spectator.SpectatorClientId] =
+                new NameTagTextCacheEntry(spectator.SpectatorSlotId, nameTagText);
+        }
+
         if (sourceKind == FloatingHeadVisualSourceKind.RuntimeDetachedHead && detachedHeadSource != null)
         {
             return _visualFactory.CreateFromDetachedHead(
@@ -815,6 +873,7 @@ public sealed class FloatingHeadVisualService : IDisposable
         _voiceDataLoggedSpectators.Remove(spectatorClientId);
         _voiceDataActiveSpectators.Remove(spectatorClientId);
         _visualSkipLoggedSpectators.Remove(spectatorClientId);
+        _nameTagTextCache.Remove(spectatorClientId);
         visual.Dispose();
         LogDebug($"Floating-head placeholder visual destroyed: spectatorClient={spectatorClientId}, reason={reason}.");
     }
@@ -823,6 +882,7 @@ public sealed class FloatingHeadVisualService : IDisposable
     {
         if (_visuals.Count == 0)
         {
+            InvalidateCachedVisualState();
             return;
         }
 
@@ -841,6 +901,16 @@ public sealed class FloatingHeadVisualService : IDisposable
         _voiceDataLoggedSpectators.Clear();
         _voiceDataActiveSpectators.Clear();
         _visualSkipLoggedSpectators.Clear();
+        _nameTagTextCache.Clear();
+        InvalidateCachedVisualState();
+    }
+
+    private void InvalidateCachedVisualState()
+    {
+        _hasCachedVisualState = false;
+        _lastFullUpdateFrame = -1;
+        _lastAnchorPosition = Vector3.zero;
+        _sortedSpectators.Clear();
     }
 
     private void DrawScreenFallback(Camera camera, FloatingHeadVisual visual)
@@ -1003,18 +1073,57 @@ public sealed class FloatingHeadVisualService : IDisposable
             return;
         }
 
-        string text = FormatNameTagText(spectator);
+        RefreshNameTagTextCache();
+        string text;
+        if (_nameTagTextCache.TryGetValue(spectator.SpectatorClientId, out NameTagTextCacheEntry entry)
+            && entry.SpectatorSlotId == spectator.SpectatorSlotId)
+        {
+            text = entry.Text;
+        }
+        else
+        {
+            text = FormatNameTagText(spectator, out bool canCache);
+            if (canCache)
+            {
+                _nameTagTextCache[spectator.SpectatorClientId] =
+                    new NameTagTextCacheEntry(spectator.SpectatorSlotId, text);
+            }
+        }
+
         if (visual.TrySetNameTagText(text) && _config.DebugNameTagLifecycle.Value)
         {
             ModLog.Debug($"Floating-head name tag updated: spectatorClient={spectator.SpectatorClientId}, text={text.Replace('\n', ' ')}.");
         }
     }
 
-    private string FormatNameTagText(RemoteSpectatorInfo spectator)
+    private void RefreshNameTagTextCache()
+    {
+        int identityRevision = _networkService != null ? _networkService.RemotePeerIdentityRevision : -1;
+        bool useGamePlayerNames = _config.NameTagUseGamePlayerNames.Value;
+        bool useFallbackIds = _config.NameTagUseFallbackIds.Value;
+        if (!NameTagTextCacheRules.ShouldClear(
+            _cachedNameTagIdentityRevision,
+            identityRevision,
+            _cachedNameTagUseGamePlayerNames,
+            useGamePlayerNames,
+            _cachedNameTagUseFallbackIds,
+            useFallbackIds))
+        {
+            return;
+        }
+
+        _nameTagTextCache.Clear();
+        _cachedNameTagIdentityRevision = identityRevision;
+        _cachedNameTagUseGamePlayerNames = useGamePlayerNames;
+        _cachedNameTagUseFallbackIds = useFallbackIds;
+    }
+
+    private string FormatNameTagText(RemoteSpectatorInfo spectator, out bool canCache)
     {
         if (_config.NameTagUseGamePlayerNames.Value
             && TryGetSyncedDisplayName(spectator.SpectatorClientId, out string syncedDisplayName))
         {
+            canCache = true;
             return syncedDisplayName;
         }
 
@@ -1025,14 +1134,17 @@ public sealed class FloatingHeadVisualService : IDisposable
                 out string displayName)
             && !string.IsNullOrWhiteSpace(displayName))
         {
+            canCache = false;
             return displayName.Trim();
         }
 
         if (_config.NameTagUseFallbackIds.Value)
         {
+            canCache = true;
             return $"Client {spectator.SpectatorClientId}\nSlot {spectator.SpectatorSlotId}";
         }
 
+        canCache = true;
         return "Spectator";
     }
 
@@ -1129,5 +1241,18 @@ public sealed class FloatingHeadVisualService : IDisposable
     private static string FormatVector(Vector3 vector)
     {
         return $"({vector.x:0.00}, {vector.y:0.00}, {vector.z:0.00})";
+    }
+
+    private readonly struct NameTagTextCacheEntry
+    {
+        public NameTagTextCacheEntry(ulong spectatorSlotId, string text)
+        {
+            SpectatorSlotId = spectatorSlotId;
+            Text = text;
+        }
+
+        public ulong SpectatorSlotId { get; }
+
+        public string Text { get; }
     }
 }

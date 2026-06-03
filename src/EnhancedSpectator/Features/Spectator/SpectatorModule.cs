@@ -21,6 +21,7 @@ public sealed class SpectatorModule :
     IRuntimeCameraPreCullTickable
 {
     private readonly IGameSpectatorAdapter _gameSpectatorAdapter;
+    private readonly SpectatorSnapshotCache _snapshotCache;
     private readonly SpectatorFreecamController _freecamController;
     private bool _initialized;
 
@@ -31,10 +32,12 @@ public sealed class SpectatorModule :
     {
         _gameSpectatorAdapter = gameSpectatorAdapter ?? throw new ArgumentNullException(nameof(gameSpectatorAdapter));
         SpectatorFreecamSettings settings = freecamSettings ?? throw new ArgumentNullException(nameof(freecamSettings));
+        _snapshotCache = new SpectatorSnapshotCache(_gameSpectatorAdapter);
         SpectatorAnchorService anchorService = new SpectatorAnchorService();
         SpectatorInputService inputService = new SpectatorInputService(settings);
         _freecamController = new SpectatorFreecamController(
             _gameSpectatorAdapter,
+            _snapshotCache,
             anchorService,
             inputService,
             settings);
@@ -66,7 +69,7 @@ public sealed class SpectatorModule :
             return;
         }
 
-        if (_gameSpectatorAdapter.TryGetLocalSpectatorSnapshot(out GameSpectatorSnapshot snapshot))
+        if (_snapshotCache.TryGetCurrentFrameSnapshot(out GameSpectatorSnapshot snapshot))
         {
             Current = new SpectatorState(
                 true,
@@ -83,7 +86,7 @@ public sealed class SpectatorModule :
     public bool TryGetCurrentSpectatorTarget(out SpectatorTargetState state)
     {
         if (_initialized
-            && _gameSpectatorAdapter.TryGetLocalSpectatorSnapshot(out GameSpectatorSnapshot snapshot)
+            && _snapshotCache.TryGetCurrentFrameSnapshot(out GameSpectatorSnapshot snapshot)
             && snapshot.HasRound
             && snapshot.HasLocalPlayer
             && snapshot.LocalPlayerSlotId.HasValue
@@ -108,7 +111,7 @@ public sealed class SpectatorModule :
     public bool TryGetCurrentSpectatorPose(out SpectatorPoseState state)
     {
         if (_initialized
-            && _gameSpectatorAdapter.TryGetLocalSpectatorSnapshot(out GameSpectatorSnapshot snapshot)
+            && _snapshotCache.TryGetCurrentFrameSnapshot(out GameSpectatorSnapshot snapshot)
             && snapshot.HasRound
             && snapshot.HasLocalPlayer
             && snapshot.LocalPlayerSlotId.HasValue
@@ -219,11 +222,13 @@ public sealed class SpectatorModule :
         _initialized = false;
         SpectatorLifecycleEvents.Changed -= OnSpectatorLifecycleChanged;
         Current = SpectatorState.Unavailable;
+        _snapshotCache.Clear();
         ModLog.Debug("Spectator freecam module disposed.");
     }
 
     private void OnSpectatorLifecycleChanged(SpectatorLifecycleEventKind kind)
     {
+        _snapshotCache.Clear();
         _freecamController.NotifyLifecycleEvent(kind);
     }
 }

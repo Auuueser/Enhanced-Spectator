@@ -31,4 +31,9 @@ public interface IGameSpectatorVoiceRoutingAdapter
     /// Clears one remote spectator voice route and restores the previous local playback state when available.
     /// </summary>
     void ClearSpectatorVoiceRoute(ulong spectatorClientId, ulong spectatorSlotId);
+
+    /// <summary>
+    /// Clears cached lookup state that is only useful while routes are active.
+    /// </summary>
+    void ClearCachedVoiceRouteLookups();
 }

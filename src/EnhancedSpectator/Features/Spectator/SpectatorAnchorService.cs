@@ -8,7 +8,8 @@ namespace EnhancedSpectator.Features.Spectator;
 /// </summary>
 public sealed class SpectatorAnchorService
 {
-    private string? _targetKey;
+    private SpectatorAnchorTargetIdentity _targetIdentity;
+    private bool _hasTargetIdentity;
 
     /// <summary>
     /// Attempts to update the active anchor from a spectator snapshot.
@@ -24,9 +25,18 @@ public sealed class SpectatorAnchorService
             return false;
         }
 
-        string nextKey = CreateTargetKey(snapshot, anchor);
-        targetChanged = _targetKey != null && _targetKey != nextKey;
-        _targetKey = nextKey;
+        if (!SpectatorAnchorTargetIdentity.TryCreate(
+            snapshot,
+            anchor.GetInstanceID(),
+            out SpectatorAnchorTargetIdentity nextIdentity))
+        {
+            Clear();
+            return false;
+        }
+
+        targetChanged = _hasTargetIdentity && !_targetIdentity.Equals(nextIdentity);
+        _targetIdentity = nextIdentity;
+        _hasTargetIdentity = true;
         return true;
     }
 
@@ -35,18 +45,7 @@ public sealed class SpectatorAnchorService
     /// </summary>
     public void Clear()
     {
-        _targetKey = null;
-    }
-
-    private static string CreateTargetKey(GameSpectatorSnapshot snapshot, Transform anchor)
-    {
-        if (snapshot.SpectatedPlayerSlotId.HasValue)
-        {
-            return snapshot.SpectatedPlayerActualClientId.HasValue
-                ? $"{snapshot.SpectatedPlayerSlotId.Value}:{snapshot.SpectatedPlayerActualClientId.Value}"
-                : snapshot.SpectatedPlayerSlotId.Value.ToString();
-        }
-
-        return $"anchor:{anchor.GetInstanceID()}";
+        _targetIdentity = default;
+        _hasTargetIdentity = false;
     }
 }

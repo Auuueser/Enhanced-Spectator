@@ -29,6 +29,16 @@ public interface IEnhancedSpectatorNetworkService
     NetworkLifecycleState LifecycleState { get; }
 
     /// <summary>
+    /// Gets a revision that changes when stored remote peer identity data changes.
+    /// </summary>
+    int RemotePeerIdentityRevision { get; }
+
+    /// <summary>
+    /// Gets a revision that changes when stored remote spectator target data changes.
+    /// </summary>
+    int RemoteSpectatorTargetRevision { get; }
+
+    /// <summary>
     /// Initializes the service.
     /// </summary>
     void Initialize();
@@ -87,6 +97,11 @@ public interface IEnhancedSpectatorNetworkService
     /// Gets a copy of the last received mod-owned peer identities.
     /// </summary>
     IReadOnlyList<PeerIdentityState> GetRemotePeerIdentities();
+
+    /// <summary>
+    /// Copies the last received mod-owned peer identities into a caller-owned list.
+    /// </summary>
+    void CopyRemotePeerIdentitiesTo(List<PeerIdentityState> destination);
 
     /// <summary>
     /// Gets a copy of the last received remote voice activity snapshots.

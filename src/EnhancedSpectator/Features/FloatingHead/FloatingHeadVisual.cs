@@ -178,6 +178,11 @@ public sealed class FloatingHeadVisual : IDisposable
     public FloatingHeadVisualState State { get; private set; }
 
     /// <summary>
+    /// Gets the most recent applied visual scale.
+    /// </summary>
+    public float CurrentScale => _hasPose ? Mathf.Max(0.01f, _smoothedScale) : 1f;
+
+    /// <summary>
     /// Updates local smoothed voice activity and material brightness.
     /// </summary>
     public float UpdateVoiceLevel(float targetLevel, float smoothTime)

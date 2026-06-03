@@ -10,11 +10,22 @@ public sealed class RemoteSpectatorTargetRegistry
     private readonly Dictionary<ulong, SpectatorTargetState> _targets = new Dictionary<ulong, SpectatorTargetState>();
 
     /// <summary>
+    /// Gets a monotonic counter that changes when stored target state changes.
+    /// </summary>
+    public int Revision { get; private set; }
+
+    /// <summary>
     /// Registers or updates a remote spectator target state.
     /// </summary>
     public void Update(SpectatorTargetState state)
     {
+        bool changed = !_targets.TryGetValue(state.LocalClientId, out SpectatorTargetState existing)
+            || !existing.Equals(state);
         _targets[state.LocalClientId] = state;
+        if (changed)
+        {
+            Revision++;
+        }
     }
 
     /// <summary>
@@ -50,7 +61,10 @@ public sealed class RemoteSpectatorTargetRegistry
     /// </summary>
     public void Remove(ulong clientId)
     {
-        _targets.Remove(clientId);
+        if (_targets.Remove(clientId))
+        {
+            Revision++;
+        }
     }
 
     /// <summary>
@@ -58,6 +72,12 @@ public sealed class RemoteSpectatorTargetRegistry
     /// </summary>
     public void Clear()
     {
+        if (_targets.Count == 0)
+        {
+            return;
+        }
+
         _targets.Clear();
+        Revision++;
     }
 }

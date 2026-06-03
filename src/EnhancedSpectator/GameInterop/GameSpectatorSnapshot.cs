@@ -5,7 +5,7 @@ namespace EnhancedSpectator.GameInterop;
 /// <summary>
 /// Immutable snapshot of the current local spectator state.
 /// </summary>
-public sealed class GameSpectatorSnapshot
+public readonly struct GameSpectatorSnapshot
 {
     /// <summary>
     /// Creates a spectator snapshot.

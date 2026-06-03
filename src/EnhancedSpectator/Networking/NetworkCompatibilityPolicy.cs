@@ -37,4 +37,21 @@ public static class NetworkCompatibilityPolicy
     {
         return targetSyncReady && lifecycleState == NetworkLifecycleState.TransportRegistered;
     }
+
+    /// <summary>
+    /// Gets whether a capability probe should be sent again while no compatible peer has answered.
+    /// </summary>
+    public static bool ShouldRetryCapabilityProbe(
+        bool targetSyncReady,
+        bool capabilitySent,
+        float capabilityProbeSentRealtime,
+        float currentRealtime,
+        float retryIntervalSeconds)
+    {
+        return !targetSyncReady
+            && capabilitySent
+            && capabilityProbeSentRealtime >= 0f
+            && retryIntervalSeconds > 0f
+            && currentRealtime - capabilityProbeSentRealtime >= retryIntervalSeconds;
+    }
 }

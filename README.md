@@ -1,24 +1,26 @@
 # Enhanced Spectator
 
-Enhanced Spectator is a public test-version BepInEx mod for Lethal Company. It improves the spectator experience with local freecam controls, compatible-player spectator presence, floating spectator visuals, name tags, and configurable dead-spectator voice routing.
+Enhanced Spectator is a public test-version BepInEx mod for Lethal Company. It improves dead-player spectating with local freecam controls, compatible-player spectator presence, floating spectator visuals, name tags, and configurable dead-spectator voice routing.
 
-The mod is designed to preserve the game's vanilla death state, spectator target selection, connection approval, and round lifecycle.
+The mod preserves the game's vanilla death state, spectator target selection, connection approval, and round lifecycle.
 
 ## Status
 
-Version: `0.1.3`
+Version: `0.2.0`
 
 Current public test features:
 
 - Client-local enhanced spectator freecam.
-- Modded-peer capability handshake and spectator state sync.
+- Stable spectator camera anchoring that reduces view movement inherited from watched-player walk/run animation.
+- Automatic target recovery when the watched player disconnects and another living player is available.
+- Modded-peer capability handshake, spectator state sync, identity sync, and voice-activity sync.
 - Host-mediated relay for compatible client-to-client spectator visibility.
 - Runtime floating-head spectator visuals and name tags.
 - Remote/dead spectator visibility for compatible modded peers.
 - Speaking head scale and pulse driven by synced voice activity.
 - Configurable routed dead-spectator voice, positional playback, and distance attenuation.
 - Local-only spectator stability improvements for unmodded-host sessions.
-- Remote spectator visuals remain visible when a spectator toggles between enhanced freecam and vanilla spectator view.
+- Cached runtime paths for routine input, camera, visual, name-tag, network sampling, and voice-routing work.
 
 This repository does not contain game DLLs, Unity assemblies, exported assets, BepInEx runtime files, logs, or packaged Thunderstore output.
 
