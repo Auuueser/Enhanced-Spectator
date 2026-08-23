@@ -3,6 +3,16 @@
 ## 中文
 
 <details>
+<summary><strong>0.3.1</strong></summary>
+
+### 发布兼容性
+
+- 修复 Thunderstore 详情页无法加载恐惧模式中文与英文引导图片的问题。
+- README 的引导图片与更新日志入口改用固定版本的绝对链接，以兼容 Thunderstore 的 Markdown 渲染方式。
+
+</details>
+
+<details>
 <summary><strong>0.3.0</strong></summary>
 
 ### 恐惧模式
@@ -26,18 +36,6 @@
 
 <details>
 <summary><strong>0.2.0</strong></summary>
-
-### 恐惧模式
-
-- 新增再次按键停止及长按切换下一音效的空间怪物音效控制；每位死亡玩家同时只播放一个音效，切换模型时立即停止旧音效。
-- 扩充原版 V81 怪物音效目录，覆盖已确认的敌人、行为状态与动画事件字段；抱脸虫从自身的叫声目录开始播放。
-- 将食人者拆分为可独立选择的幼体与成体模型。
-- 规范纯渲染克隆的 prefab 根位置与旋转，并移除无效的面具人/弹簧头俯仰修正。
-- 扩充通用动画与辅助动画中的怪物音效，包含受击、眩晕、激怒、攻击及死亡音效；移除固定的跨玩家播放上限，并新增可选的最近玩家数量限制。
-- 保留面具人/弹簧头的根姿态规范，同时恢复其他模型已验证的根姿态；通过完整层级骨骼映射修复食人者成体。
-- 新增按住按键并等待当前音效结束后的连续轮播、默认鬼魂玩家死亡音效、模型家族音效隔离、鼠标滚轮第三人称缩放，以及食人者成体的非活动渲染器与网格边界处理。
-- 玩家死亡时自动建立默认恐惧选择，无需切换模型即可播放默认死亡音效。
-- 新增食人者成体渲染边界校正，使可见模型与同步的鬼魂世界位置对齐。
 
 ### 观战镜头
 
@@ -146,6 +144,16 @@
 ## English
 
 <details>
+<summary><strong>0.3.1</strong></summary>
+
+### Release Compatibility
+
+- Fixed missing Chinese and English fear-mode guide images on the Thunderstore package page.
+- Changed README guide images and the changelog entry point to pinned absolute URLs compatible with Thunderstore Markdown rendering.
+
+</details>
+
+<details>
 <summary><strong>0.3.0</strong></summary>
 
 ### Fear Mode
@@ -169,18 +177,6 @@
 
 <details>
 <summary><strong>0.2.0</strong></summary>
-
-### Fear Mode
-
-- Added press-again stop and hold-for-next controls for positional monster sounds, with one active sound per dead player and immediate stop when switching models.
-- Expanded the original V81 monster clip catalog from confirmed enemy, behaviour-state, and animation-event fields; Hoarding Bug now starts from its own chitter/screech catalog.
-- Split Maneater into selectable baby and adult forms.
-- Normalized prefab root position/rotation for renderer-only clones and removed the failed Masked/Spring pitch workaround.
-- Expanded assigned monster audio coverage to misc animations and generic animation helpers, including hit, stun, rage, attack, and death clips; removed the fixed cross-player playback cap and added an optional nearest-player limit.
-- Kept Masked/Spring root normalization while restoring the previously working root pose for other profiled models, and fixed Maneater Adult with complete-hierarchy bone mapping.
-- Added completion-aware held-key fear-sound cycling, Default ghost player-death sounds, model-family clip isolation, mouse-wheel third-person zoom, and a dedicated inactive-renderer/mesh-bounds path for Maneater Adult.
-- Established the implicit Default fear selection as soon as a player dies, so Default death sounds work without cycling away and back first.
-- Added a post-pose renderer-bounds correction for Maneater Adult to align its visible body with the synchronized ghost world position.
 
 ### Spectator Camera
 

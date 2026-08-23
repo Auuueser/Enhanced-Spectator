@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Auuueser/Enhanced-Spectator/releases"><img alt="版本 0.3.0" src="https://img.shields.io/badge/版本-0.3.0-E35B18?style=flat-square&labelColor=24282C"></a>
+  <a href="https://github.com/Auuueser/Enhanced-Spectator/releases"><img alt="版本 0.3.1" src="https://img.shields.io/badge/版本-0.3.1-E35B18?style=flat-square&labelColor=24282C"></a>
   <a href="https://store.steampowered.com/app/1966720/Lethal_Company/"><img alt="游戏版本 V81" src="https://img.shields.io/badge/游戏-V81-E35B18?style=flat-square&labelColor=24282C"></a>
   <a href="https://github.com/BepInEx/BepInEx"><img alt="BepInEx 5" src="https://img.shields.io/badge/运行环境-BepInEx%205-526D82?style=flat-square&labelColor=24282C"></a>
   <a href="https://github.com/Auuueser/Enhanced-Spectator/blob/main/LICENSE"><img alt="GPL-3.0" src="https://img.shields.io/badge/许可-GPL--3.0-E35B18?style=flat-square&labelColor=24282C"></a>
@@ -15,7 +15,7 @@
 <p align="center">
   <a href="https://github.com/Auuueser/Enhanced-Spectator/releases"><img alt="下载版本" src="https://img.shields.io/badge/下载-版本-E35B18?style=flat-square&labelColor=24282C"></a>
   <a href="https://github.com/Auuueser/Enhanced-Spectator/issues"><img alt="问题反馈" src="https://img.shields.io/badge/问题-反馈-C84C2F?style=flat-square&labelColor=24282C"></a>
-  <a href="CHANGELOG.md"><img alt="更新日志" src="https://img.shields.io/badge/版本-更新日志-526D82?style=flat-square&labelColor=24282C"></a>
+  <a href="https://github.com/Auuueser/Enhanced-Spectator/blob/v0.3.1/CHANGELOG.md"><img alt="更新日志" src="https://img.shields.io/badge/版本-更新日志-526D82?style=flat-square&labelColor=24282C"></a>
 </p>
 
 ## 观战，也可以很有存在感
@@ -29,11 +29,11 @@
 <table>
   <tr>
     <td width="50%" align="center">
-      <img src="assets/readme/fear-mode-entry-zh.png" alt="中文 ESC 菜单右上角恐惧模式入口图标"><br>
+      <img src="https://raw.githubusercontent.com/Auuueser/Enhanced-Spectator/v0.3.1/assets/readme/fear-mode-entry-zh.png" alt="中文 ESC 菜单右上角恐惧模式入口图标"><br>
       <sub>① 打开 ESC 菜单，点击右上角鬼魂图标</sub>
     </td>
     <td width="50%" align="center">
-      <img src="assets/readme/fear-mode-panel-zh.png" alt="中文恐惧模式模型卡片窗口"><br>
+      <img src="https://raw.githubusercontent.com/Auuueser/Enhanced-Spectator/v0.3.1/assets/readme/fear-mode-panel-zh.png" alt="中文恐惧模式模型卡片窗口"><br>
       <sub>② 选择模型、播放音效并控制鬼魂语音</sub>
     </td>
   </tr>
@@ -116,11 +116,11 @@ dotnet build src/EnhancedSpectator/EnhancedSpectator.csproj -c Release -p:GameDi
 <table>
   <tr>
     <td width="50%" align="center">
-      <img src="assets/readme/fear-mode-entry-en.png" alt="English fear-mode entry icon in the top-right corner of the ESC menu"><br>
+      <img src="https://raw.githubusercontent.com/Auuueser/Enhanced-Spectator/v0.3.1/assets/readme/fear-mode-entry-en.png" alt="English fear-mode entry icon in the top-right corner of the ESC menu"><br>
       <sub>① Open the ESC menu and select the ghost icon</sub>
     </td>
     <td width="50%" align="center">
-      <img src="assets/readme/fear-mode-panel-en.png" alt="English fear-mode model card window"><br>
+      <img src="https://raw.githubusercontent.com/Auuueser/Enhanced-Spectator/v0.3.1/assets/readme/fear-mode-panel-en.png" alt="English fear-mode model card window"><br>
       <sub>② Select a model, play sounds, and control ghost voice</sub>
     </td>
   </tr>
