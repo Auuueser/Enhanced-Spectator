@@ -12,6 +12,7 @@ namespace EnhancedSpectator;
 /// BepInEx entry point for Enhanced Spectator.
 /// </summary>
 [BepInPlugin(PluginMetadata.Guid, PluginMetadata.Name, PluginMetadata.Version)]
+[BepInDependency(LCChineseProjectDetection.PluginGuid, BepInDependency.DependencyFlags.SoftDependency)]
 public sealed class Plugin : BaseUnityPlugin
 {
     private FeatureBootstrapper? _featureBootstrapper;

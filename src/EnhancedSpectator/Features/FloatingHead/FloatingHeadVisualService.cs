@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using EnhancedSpectator.Config;
+using EnhancedSpectator.Features.FearMode;
 using EnhancedSpectator.Features.SpectatorPresence;
 using EnhancedSpectator.Features.VoiceActivity;
 using EnhancedSpectator.GameInterop;
@@ -23,6 +24,8 @@ public sealed class FloatingHeadVisualService : IDisposable
     private readonly IGameDetachedHeadVisualSourceAdapter _detachedHeadVisualSourceAdapter;
     private readonly FloatingHeadPlacementService _placementService;
     private readonly PlaceholderHeadVisualFactory _visualFactory;
+    private readonly IFearVisualOverrideState? _fearVisualOverrides;
+    private readonly RemoteSpectatorPosePresentationService? _posePresentationService;
     private readonly Dictionary<ulong, FloatingHeadVisual> _visuals =
         new Dictionary<ulong, FloatingHeadVisual>();
     private readonly HashSet<ulong> _activeSpectatorIds = new HashSet<ulong>();
@@ -63,7 +66,9 @@ public sealed class FloatingHeadVisualService : IDisposable
         IEnhancedSpectatorNetworkService? networkService,
         IGameDetachedHeadVisualSourceAdapter detachedHeadVisualSourceAdapter,
         FloatingHeadPlacementService placementService,
-        PlaceholderHeadVisualFactory visualFactory)
+        PlaceholderHeadVisualFactory visualFactory,
+        IFearVisualOverrideState? fearVisualOverrides = null,
+        RemoteSpectatorPosePresentationService? posePresentationService = null)
     {
         _config = config ?? throw new ArgumentNullException(nameof(config));
         _presenceProvider = presenceProvider ?? throw new ArgumentNullException(nameof(presenceProvider));
@@ -72,6 +77,8 @@ public sealed class FloatingHeadVisualService : IDisposable
         _detachedHeadVisualSourceAdapter = detachedHeadVisualSourceAdapter ?? throw new ArgumentNullException(nameof(detachedHeadVisualSourceAdapter));
         _placementService = placementService ?? throw new ArgumentNullException(nameof(placementService));
         _visualFactory = visualFactory ?? throw new ArgumentNullException(nameof(visualFactory));
+        _fearVisualOverrides = fearVisualOverrides;
+        _posePresentationService = posePresentationService;
     }
 
     /// <summary>
@@ -307,6 +314,8 @@ public sealed class FloatingHeadVisualService : IDisposable
         foreach (RemoteSpectatorInfo spectator in spectators)
         {
             _activeSpectatorIds.Add(spectator.SpectatorClientId);
+            bool fearOverrideActive =
+                _fearVisualOverrides?.IsFearVisualActive(spectator.SpectatorClientId) == true;
             bool shouldCreateVisual = DetachedHeadVisualSourceRules.TryResolveVisualSourceKind(
                 _config.EnablePlaceholderVisuals.Value,
                 _config.UseRuntimeDetachedHeadVisuals.Value,
@@ -331,6 +340,7 @@ public sealed class FloatingHeadVisualService : IDisposable
                 }
                 else
                 {
+                    existingVisual.SetPrimaryRendererVisible(!fearOverrideActive);
                     continue;
                 }
             }
@@ -351,6 +361,7 @@ public sealed class FloatingHeadVisualService : IDisposable
                 }
 
                 _visuals[spectator.SpectatorClientId] = visual;
+                visual.SetPrimaryRendererVisible(!fearOverrideActive);
                 _visualSkipLoggedSpectators.Remove(spectator.SpectatorClientId);
                 LogDebug(
                     $"Floating-head visual created: spectatorClient={spectator.SpectatorClientId}, spectatorSlot={spectator.SpectatorSlotId}, source={visual.SourceKind}, style={_config.VisualStyle.Value}, {GetCreationDebugInfo(visual)}.");
@@ -406,7 +417,9 @@ public sealed class FloatingHeadVisualService : IDisposable
                 out Vector3 remotePosition,
                 out Quaternion remoteRotation,
                 out Vector3 rawRemotePosition,
-                out bool usedVisibleProxy))
+                out bool usedVisibleProxy,
+                out bool motionReferenced,
+                out SpectatorMotionReferencePose motionReference))
             {
                 int visualLayer = ResolveVisibleLayer(renderingCamera);
                 visual.SetLayer(visualLayer);
@@ -415,8 +428,21 @@ public sealed class FloatingHeadVisualService : IDisposable
                     remoteRotation,
                     scale,
                     Mathf.Max(0f, _config.RemotePoseSmoothTime.Value),
-                    scaleSmoothTime: 0f);
-                visual.UpdateNameTag(renderingCamera);
+                    scaleSmoothTime: 0f,
+                    spectator.PoseState!.TimestampTicks,
+                    motionReferenced && !usedVisibleProxy,
+                    motionReference);
+                float fearTopOffset = 0f;
+                bool hasFearTop = _fearVisualOverrides != null
+                    && _fearVisualOverrides.TryGetWorldTopOffset(
+                        spectator.SpectatorClientId,
+                        out fearTopOffset);
+                float nameTagHeight = FearNameTagPlacementRules.ResolveHeightOffset(
+                    _config.NameTagHeightOffset.Value,
+                    hasFearTop,
+                    hasFearTop ? fearTopOffset : 0f);
+
+                visual.UpdateNameTag(renderingCamera, nameTagHeight);
                 if (logPose)
                 {
                     LogFirstRemotePose(
@@ -671,7 +697,9 @@ public sealed class FloatingHeadVisualService : IDisposable
         out Vector3 position,
         out Quaternion rotation,
         out Vector3 rawPosition,
-        out bool usedVisibleProxy)
+        out bool usedVisibleProxy,
+        out bool motionReferenced,
+        out SpectatorMotionReferencePose motionReference)
     {
         if (spectator.PoseState == null || !spectator.PoseState.IsSpectating)
         {
@@ -679,12 +707,28 @@ public sealed class FloatingHeadVisualService : IDisposable
             rotation = Quaternion.identity;
             rawPosition = Vector3.zero;
             usedVisibleProxy = false;
+            motionReferenced = false;
+            motionReference = default;
             return false;
         }
 
         rawPosition = spectator.PoseState.Position;
-        position = rawPosition;
-        rotation = spectator.PoseState.Rotation;
+        if (_posePresentationService != null)
+        {
+            _posePresentationService.Resolve(
+                spectator.PoseState,
+                out position,
+                out rotation,
+                out motionReferenced,
+                out motionReference);
+        }
+        else
+        {
+            position = rawPosition;
+            rotation = spectator.PoseState.Rotation;
+            motionReferenced = false;
+            motionReference = default;
+        }
         if (sourceKind == FloatingHeadVisualSourceKind.RuntimeDetachedHead)
         {
             rotation = FloatingHeadRotationRules.ApplyRuntimeDetachedHeadOffset(
@@ -702,7 +746,7 @@ public sealed class FloatingHeadVisualService : IDisposable
 
         usedVisibleProxy = _config.KeepRemotePoseInView.Value
             && camera != null
-            && TryGetVisibleProxyPosition(rawPosition, camera, out position);
+            && TryGetVisibleProxyPosition(position, camera, out position);
 
         if (FloatingHeadRotationRules.ShouldFaceLocalCamera(sourceKind, _config.FloatingHeadFaceCamera.Value))
         {

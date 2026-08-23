@@ -8,6 +8,11 @@ namespace EnhancedSpectator.Features.Spectator;
 public sealed class SpectatorCameraState
 {
     /// <summary>
+    /// Gets the current enhanced camera mode.
+    /// </summary>
+    public SpectatorCameraMode Mode { get; internal set; } = SpectatorCameraMode.Freecam;
+
+    /// <summary>
     /// Gets whether enhanced freecam is actively writing the camera transform.
     /// </summary>
     public bool IsActive { get; internal set; }
@@ -28,6 +33,11 @@ public sealed class SpectatorCameraState
     public Quaternion Rotation { get; internal set; } = Quaternion.identity;
 
     /// <summary>
+    /// Gets the logical ghost/avatar rotation published to remote visuals and positional voice.
+    /// </summary>
+    public Quaternion RepresentationRotation { get; internal set; } = Quaternion.identity;
+
+    /// <summary>
     /// Gets whether a world-space camera pose has been observed.
     /// </summary>
     public bool HasWorldPose { get; internal set; }
@@ -36,6 +46,16 @@ public sealed class SpectatorCameraState
     /// Gets the latest spectator camera world position.
     /// </summary>
     public Vector3 WorldPosition { get; internal set; }
+
+    /// <summary>
+    /// Gets the latest locally rendered spectator camera position.
+    /// </summary>
+    public Vector3 RenderedWorldPosition { get; internal set; }
+
+    /// <summary>
+    /// Gets whether self-ghost third-person view is active.
+    /// </summary>
+    public bool IsThirdPerson => IsActive && Mode == SpectatorCameraMode.ThirdPerson;
 
     /// <summary>
     /// Gets the current target slot id when available.

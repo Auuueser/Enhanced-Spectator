@@ -1,4 +1,5 @@
 using System;
+using EnhancedSpectator.Features.SpectatorPresence;
 using UnityEngine;
 
 namespace EnhancedSpectator.Features.FloatingHead;
@@ -28,6 +29,14 @@ public sealed class FloatingHeadVisual : IDisposable
     private int _lastVoiceSmoothingFrame = -1;
     private int _currentLayer = -1;
     private bool _hasPose;
+    private bool _hasMotionReference;
+    private SpectatorMotionReferencePose _motionReference;
+    private bool _hasNetworkSample;
+    private long _networkSampleTimestampTicks;
+    private Vector3 _networkSamplePosition;
+    private Vector3 _networkSampleVelocity;
+    private float _networkSampleTime;
+    private bool _hasNetworkSampleVelocity;
     private bool _disposed;
 
     /// <summary>
@@ -249,11 +258,39 @@ public sealed class FloatingHeadVisual : IDisposable
     /// </summary>
     public void ApplyPose(Vector3 position, Quaternion rotation, float scale, float smoothTime, float scaleSmoothTime)
     {
+        ApplyPose(
+            position,
+            rotation,
+            scale,
+            smoothTime,
+            scaleSmoothTime,
+            sampleTimestampTicks: 0,
+            motionReferenced: false,
+            motionReference: default);
+    }
+
+    /// <summary>
+    /// Applies a synchronized world pose while preserving moving-reference motion and predicting between samples.
+    /// </summary>
+    public void ApplyPose(
+        Vector3 position,
+        Quaternion rotation,
+        float scale,
+        float smoothTime,
+        float scaleSmoothTime,
+        long sampleTimestampTicks,
+        bool motionReferenced,
+        SpectatorMotionReferencePose motionReference)
+    {
         if (_disposed || _gameObject == null)
         {
             return;
         }
 
+        position = ResolvePredictedPosition(
+            position,
+            sampleTimestampTicks,
+            motionReferenced);
         Vector3 renderedPosition = position;
         Quaternion renderedRotation = rotation;
         float clampedSmoothTime = Mathf.Max(0f, smoothTime);
@@ -272,6 +309,7 @@ public sealed class FloatingHeadVisual : IDisposable
         {
             if (_lastSmoothingFrame != Time.frameCount)
             {
+                ApplyMotionReferenceDelta(motionReferenced, motionReference);
                 float deltaTime = Mathf.Max(Time.deltaTime, 0.0001f);
                 _smoothedPosition = Vector3.SmoothDamp(
                     _smoothedPosition,
@@ -305,6 +343,12 @@ public sealed class FloatingHeadVisual : IDisposable
             scale = _smoothedScale;
         }
 
+        _hasMotionReference = motionReferenced;
+        if (motionReferenced)
+        {
+            _motionReference = motionReference;
+        }
+
         Transform transform = _gameObject.transform;
         transform.SetPositionAndRotation(renderedPosition, renderedRotation);
         transform.localScale = Vector3.one * Mathf.Max(0.01f, scale);
@@ -313,17 +357,86 @@ public sealed class FloatingHeadVisual : IDisposable
         _nameTag?.ApplyPose(renderedPosition, renderedRotation, camera: null);
     }
 
+    private Vector3 ResolvePredictedPosition(
+        Vector3 position,
+        long sampleTimestampTicks,
+        bool motionReferenced)
+    {
+        if (motionReferenced || sampleTimestampTicks == 0)
+        {
+            _hasNetworkSample = false;
+            _hasNetworkSampleVelocity = false;
+            return position;
+        }
+
+        float now = Time.unscaledTime;
+        if (!_hasNetworkSample)
+        {
+            _hasNetworkSample = true;
+            _networkSampleTimestampTicks = sampleTimestampTicks;
+            _networkSamplePosition = position;
+            _networkSampleVelocity = Vector3.zero;
+            _networkSampleTime = now;
+            _hasNetworkSampleVelocity = false;
+        }
+        else if (_networkSampleTimestampTicks != sampleTimestampTicks)
+        {
+            float sampleDeltaTime = now - _networkSampleTime;
+            _networkSampleVelocity = RemoteSpectatorPosePredictionRules.ResolveVelocity(
+                _networkSamplePosition,
+                position,
+                sampleDeltaTime,
+                _networkSampleVelocity,
+                _hasNetworkSampleVelocity);
+            _hasNetworkSampleVelocity = _networkSampleVelocity.sqrMagnitude > 0.000001f;
+            _networkSampleTimestampTicks = sampleTimestampTicks;
+            _networkSamplePosition = position;
+            _networkSampleTime = now;
+        }
+
+        return RemoteSpectatorPosePredictionRules.ResolvePredictedPosition(
+            _networkSamplePosition,
+            _networkSampleVelocity,
+            now - _networkSampleTime);
+    }
+
+    private void ApplyMotionReferenceDelta(
+        bool motionReferenced,
+        SpectatorMotionReferencePose motionReference)
+    {
+        if (!motionReferenced || !_hasMotionReference)
+        {
+            return;
+        }
+
+        Vector3 velocityEnd = _smoothedPosition + _positionVelocity;
+        Vector3 movedPosition = RemoteSpectatorMotionCompensationRules.ResolvePosition(
+            _smoothedPosition,
+            _motionReference,
+            motionReference);
+        Vector3 movedVelocityEnd = RemoteSpectatorMotionCompensationRules.ResolvePosition(
+            velocityEnd,
+            _motionReference,
+            motionReference);
+        _smoothedPosition = movedPosition;
+        _positionVelocity = movedVelocityEnd - movedPosition;
+        _smoothedRotation = RemoteSpectatorMotionCompensationRules.ResolveRotation(
+            _smoothedRotation,
+            _motionReference,
+            motionReference);
+    }
+
     /// <summary>
     /// Updates the optional name tag against the current render camera.
     /// </summary>
-    public void UpdateNameTag(Camera? camera)
+    public void UpdateNameTag(Camera? camera, float minimumHeightOffset = 0f)
     {
         if (_disposed || _nameTag == null || _gameObject == null || !State.IsVisible)
         {
             return;
         }
 
-        _nameTag.ApplyPose(State.Position, _gameObject.transform.rotation, camera);
+        _nameTag.ApplyPose(State.Position, _gameObject.transform.rotation, camera, minimumHeightOffset);
     }
 
     /// <summary>
@@ -337,6 +450,20 @@ public sealed class FloatingHeadVisual : IDisposable
         }
 
         return _nameTag.SetText(text);
+    }
+
+    /// <summary>
+    /// Shows or hides the primary head renderer while preserving pose and optional name tag visibility.
+    /// </summary>
+    public void SetPrimaryRendererVisible(bool visible)
+    {
+        if (_disposed || _meshRenderer == null)
+        {
+            return;
+        }
+
+        _meshRenderer.enabled = true;
+        _meshRenderer.forceRenderingOff = !visible;
     }
 
     /// <summary>

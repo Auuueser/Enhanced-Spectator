@@ -6,6 +6,8 @@
 .vs/
 .vscode/
 .idea/
+.codegraph/
+.codex/
 *.user
 *.suo
 *.userosscache

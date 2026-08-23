@@ -7,6 +7,12 @@ namespace EnhancedSpectator.Features.SpectatorPresence;
 /// </summary>
 public static class RemoteSpectatorVisibilityRules
 {
+    /// <summary>Gets whether a target state belongs to another network client.</summary>
+    public static bool IsRemoteSpectator(SpectatorTargetState target, ulong localClientId)
+    {
+        return target.LocalClientId != localClientId;
+    }
+
     /// <summary>
     /// Gets whether the remote spectator target state points at the local player.
     /// </summary>
@@ -15,7 +21,7 @@ public static class RemoteSpectatorVisibilityRules
         ulong localClientId,
         ulong localPlayerSlotId)
     {
-        if (!remoteTarget.IsSpectating || remoteTarget.LocalClientId == localClientId)
+        if (!remoteTarget.IsSpectating || !IsRemoteSpectator(remoteTarget, localClientId))
         {
             return false;
         }

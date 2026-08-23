@@ -20,6 +20,7 @@ public sealed class SpectatorVoiceRoutingService : IDisposable
     private readonly EnhancedSpectatorConfig _config;
     private readonly IEnhancedSpectatorNetworkService _networkService;
     private readonly IGameSpectatorVoiceRoutingAdapter _adapter;
+    private readonly ISpectatorVoiceMuteState _muteState;
     private readonly HashSet<ulong> _activeRoutes = new HashSet<ulong>();
     private readonly Dictionary<ulong, ulong> _activeSlots = new Dictionary<ulong, ulong>();
     private readonly HashSet<ulong> _desiredRoutes = new HashSet<ulong>();
@@ -36,10 +37,23 @@ public sealed class SpectatorVoiceRoutingService : IDisposable
         EnhancedSpectatorConfig config,
         IEnhancedSpectatorNetworkService networkService,
         IGameSpectatorVoiceRoutingAdapter adapter)
+        : this(config, networkService, adapter, UnmutedSpectatorVoiceState.Instance)
+    {
+    }
+
+    /// <summary>
+    /// Creates the spectator voice routing service with an explicit local mute state.
+    /// </summary>
+    public SpectatorVoiceRoutingService(
+        EnhancedSpectatorConfig config,
+        IEnhancedSpectatorNetworkService networkService,
+        IGameSpectatorVoiceRoutingAdapter adapter,
+        ISpectatorVoiceMuteState muteState)
     {
         _config = config ?? throw new ArgumentNullException(nameof(config));
         _networkService = networkService ?? throw new ArgumentNullException(nameof(networkService));
         _adapter = adapter ?? throw new ArgumentNullException(nameof(adapter));
+        _muteState = muteState ?? throw new ArgumentNullException(nameof(muteState));
     }
 
     /// <summary>
@@ -52,7 +66,9 @@ public sealed class SpectatorVoiceRoutingService : IDisposable
             return;
         }
 
-        if (!_config.EnableSpectatorVoiceToTarget.Value
+        if (!SpectatorVoiceMuteRules.ShouldEvaluateRoutes(
+                _config.EnableSpectatorVoiceToTarget.Value,
+                _muteState.IsMuted)
             || !RuntimeConnectionState.CanUseModNetworking(out _)
             || !_adapter.TryGetLocalVoiceReceiverState(
                 out bool hasLocalPlayer,

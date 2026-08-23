@@ -1,4 +1,5 @@
 using EnhancedSpectator.Features.Spectator;
+using EnhancedSpectator.Features.SpectatorPresence;
 using UnityEngine;
 
 namespace EnhancedSpectator.GameInterop;
@@ -87,6 +88,29 @@ public interface IGameSpectatorAdapter
     /// Attempts to get the best local player head anchor position for local-only visuals.
     /// </summary>
     bool TryGetLocalPlayerHeadAnchorPosition(out Vector3 position);
+
+    /// <summary>Gets whether a world position is currently inside the moving ship volume.</summary>
+    bool IsWorldPositionInsideShip(Vector3 position);
+
+    /// <summary>Attempts to read the current moving ship reference pose.</summary>
+    bool TryGetShipMotionReference(out SpectatorMotionReferencePose referencePose);
+}
+
+/// <summary>Optional game interop boundary for moving-ship lifecycle state.</summary>
+public interface IGameShipMotionStateAdapter
+{
+    /// <summary>Gets whether the ship takeoff animation is currently active.</summary>
+    bool IsShipLeaving();
+}
+
+/// <summary>Optional game interop boundary for resolving a watched player's moving frame.</summary>
+public interface IGameSpectatedTargetMotionReferenceAdapter
+{
+    /// <summary>Attempts to resolve a watched player's current world reference pose.</summary>
+    bool TryGetSpectatedTargetMotionReference(
+        ulong? targetClientId,
+        ulong? targetPlayerSlotId,
+        out SpectatorMotionReferencePose referencePose);
 }
 
 internal sealed class NoopGameSpectatorAdapter : IGameSpectatorAdapter
@@ -190,6 +214,18 @@ internal sealed class NoopGameSpectatorAdapter : IGameSpectatorAdapter
     public bool TryGetLocalPlayerHeadAnchorPosition(out Vector3 position)
     {
         position = Vector3.zero;
+        return false;
+    }
+
+    public bool IsWorldPositionInsideShip(Vector3 position)
+    {
+        _ = position;
+        return false;
+    }
+
+    public bool TryGetShipMotionReference(out SpectatorMotionReferencePose referencePose)
+    {
+        referencePose = default;
         return false;
     }
 }

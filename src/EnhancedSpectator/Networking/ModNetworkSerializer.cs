@@ -50,7 +50,11 @@ public static class ModNetworkSerializer
         + FastBufferWriter.GetWriteSize<bool>()
         + FastBufferWriter.GetWriteSize<ulong>()
         + FastBufferWriter.GetWriteSize<float>() * 7
-        + FastBufferWriter.GetWriteSize<long>();
+        + FastBufferWriter.GetWriteSize<long>()
+        + FastBufferWriter.GetWriteSize<bool>()
+        + FastBufferWriter.GetWriteSize<float>() * 7
+        + FastBufferWriter.GetWriteSize<bool>()
+        + FastBufferWriter.GetWriteSize<float>() * 7;
 
     /// <summary>
     /// Gets the byte capacity needed for one peer identity message.
@@ -246,6 +250,29 @@ public static class ModNetworkSerializer
         writer.WriteValueSafe(state.Rotation.z);
         writer.WriteValueSafe(state.Rotation.w);
         writer.WriteValueSafe(state.TimestampTicks);
+        writer.WriteValueSafe(state.HasMotionReference);
+        if (state.HasMotionReference)
+        {
+            writer.WriteValueSafe(state.MotionReferenceLocalPosition.x);
+            writer.WriteValueSafe(state.MotionReferenceLocalPosition.y);
+            writer.WriteValueSafe(state.MotionReferenceLocalPosition.z);
+            writer.WriteValueSafe(state.MotionReferenceLocalRotation.x);
+            writer.WriteValueSafe(state.MotionReferenceLocalRotation.y);
+            writer.WriteValueSafe(state.MotionReferenceLocalRotation.z);
+            writer.WriteValueSafe(state.MotionReferenceLocalRotation.w);
+        }
+
+        writer.WriteValueSafe(state.HasTargetMotionReference);
+        if (state.HasTargetMotionReference)
+        {
+            writer.WriteValueSafe(state.TargetMotionReferenceLocalPosition.x);
+            writer.WriteValueSafe(state.TargetMotionReferenceLocalPosition.y);
+            writer.WriteValueSafe(state.TargetMotionReferenceLocalPosition.z);
+            writer.WriteValueSafe(state.TargetMotionReferenceLocalRotation.x);
+            writer.WriteValueSafe(state.TargetMotionReferenceLocalRotation.y);
+            writer.WriteValueSafe(state.TargetMotionReferenceLocalRotation.z);
+            writer.WriteValueSafe(state.TargetMotionReferenceLocalRotation.w);
+        }
     }
 
     /// <summary>
@@ -283,6 +310,64 @@ public static class ModNetworkSerializer
             reader.ReadValueSafe(out float rotationZ);
             reader.ReadValueSafe(out float rotationW);
             reader.ReadValueSafe(out long timestampTicks);
+            bool hasMotionReference = false;
+            Vector3 motionReferenceLocalPosition = Vector3.zero;
+            Quaternion motionReferenceLocalRotation = Quaternion.identity;
+            try
+            {
+                reader.ReadValueSafe(out hasMotionReference);
+                if (hasMotionReference)
+                {
+                    reader.ReadValueSafe(out float localPositionX);
+                    reader.ReadValueSafe(out float localPositionY);
+                    reader.ReadValueSafe(out float localPositionZ);
+                    reader.ReadValueSafe(out float localRotationX);
+                    reader.ReadValueSafe(out float localRotationY);
+                    reader.ReadValueSafe(out float localRotationZ);
+                    reader.ReadValueSafe(out float localRotationW);
+                    motionReferenceLocalPosition = new Vector3(localPositionX, localPositionY, localPositionZ);
+                    motionReferenceLocalRotation = new Quaternion(localRotationX, localRotationY, localRotationZ, localRotationW);
+                }
+            }
+            catch
+            {
+                hasMotionReference = false;
+                motionReferenceLocalPosition = Vector3.zero;
+                motionReferenceLocalRotation = Quaternion.identity;
+            }
+
+            bool hasTargetMotionReference = false;
+            Vector3 targetMotionReferenceLocalPosition = Vector3.zero;
+            Quaternion targetMotionReferenceLocalRotation = Quaternion.identity;
+            try
+            {
+                reader.ReadValueSafe(out hasTargetMotionReference);
+                if (hasTargetMotionReference)
+                {
+                    reader.ReadValueSafe(out float targetLocalPositionX);
+                    reader.ReadValueSafe(out float targetLocalPositionY);
+                    reader.ReadValueSafe(out float targetLocalPositionZ);
+                    reader.ReadValueSafe(out float targetLocalRotationX);
+                    reader.ReadValueSafe(out float targetLocalRotationY);
+                    reader.ReadValueSafe(out float targetLocalRotationZ);
+                    reader.ReadValueSafe(out float targetLocalRotationW);
+                    targetMotionReferenceLocalPosition = new Vector3(
+                        targetLocalPositionX,
+                        targetLocalPositionY,
+                        targetLocalPositionZ);
+                    targetMotionReferenceLocalRotation = new Quaternion(
+                        targetLocalRotationX,
+                        targetLocalRotationY,
+                        targetLocalRotationZ,
+                        targetLocalRotationW);
+                }
+            }
+            catch
+            {
+                hasTargetMotionReference = false;
+                targetMotionReferenceLocalPosition = Vector3.zero;
+                targetMotionReferenceLocalRotation = Quaternion.identity;
+            }
 
             state = new SpectatorPoseState(
                 isSpectating,
@@ -292,7 +377,13 @@ public static class ModNetworkSerializer
                 hasTargetPlayerSlotId ? targetPlayerSlotId : (ulong?)null,
                 new Vector3(positionX, positionY, positionZ),
                 new Quaternion(rotationX, rotationY, rotationZ, rotationW),
-                timestampTicks);
+                timestampTicks,
+                hasMotionReference,
+                motionReferenceLocalPosition,
+                motionReferenceLocalRotation,
+                hasTargetMotionReference,
+                targetMotionReferenceLocalPosition,
+                targetMotionReferenceLocalRotation);
             return true;
         }
         catch (Exception ex)

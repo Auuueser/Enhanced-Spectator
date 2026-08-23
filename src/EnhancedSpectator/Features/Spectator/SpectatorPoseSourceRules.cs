@@ -34,4 +34,12 @@ public static class SpectatorPoseSourceRules
             && hasSpectatedTarget
             && (useFreecamPose || useVanillaSpectatorPose);
     }
+
+    /// <summary>
+    /// Gets whether any active spectator pose can reuse the watched player's locally smoothed moving frame.
+    /// </summary>
+    public static bool ShouldCaptureTargetMotionReference(bool hasPose, bool hasSpectatedTarget)
+    {
+        return hasPose && hasSpectatedTarget;
+    }
 }

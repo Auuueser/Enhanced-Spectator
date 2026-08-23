@@ -15,6 +15,11 @@ public sealed class SpectatorFreecamController
     private const float MinPitch = -85f;
     private const int TargetSwitchRecoveryFrames = 4;
     private const int CameraInactiveRecoveryFrames = 3;
+    private const float AnchorTeleportThreshold = 12f;
+    private const float ThirdPersonCollisionPadding = 0.15f;
+    private const float ThirdPersonZoomStep = 0.5f;
+    private const float ThirdPersonMinimumDistance = 1.5f;
+    private const float ThirdPersonMaximumDistance = 15f;
 
     private readonly IGameSpectatorAdapter _adapter;
     private readonly SpectatorSnapshotCache _snapshotCache;
@@ -31,6 +36,8 @@ public sealed class SpectatorFreecamController
     private Vector3 _smoothVelocity;
     private Vector3 _smoothedPosition;
     private bool _hasSmoothedPosition;
+    private Vector3 _previousAnchorPosition;
+    private bool _hasPreviousAnchorPosition;
     private int _lastSmoothingFrame = -1;
     private int _lastPreCullApplyFrame = -1;
     private int _nextApplyDebugFrame;
@@ -40,6 +47,7 @@ public sealed class SpectatorFreecamController
     private int _nextEligibilityDebugFrame;
     private SpectatorFreecamIneligibleReason _lastEligibilityDebugReason = SpectatorFreecamIneligibleReason.None;
     private bool _cameraInactiveGraceStarted;
+    private float _thirdPersonDistance;
 
     /// <summary>
     /// Creates a spectator freecam controller.
@@ -57,6 +65,7 @@ public sealed class SpectatorFreecamController
         _inputService = inputService;
         _settings = settings;
         _state.UserEnabled = settings.FreecamDefaultOn;
+        _thirdPersonDistance = settings.ThirdPersonDistance;
     }
 
     /// <summary>
@@ -129,14 +138,42 @@ public sealed class SpectatorFreecamController
                 return;
             }
 
-            if (_inputService.ToggleFreecamPressed)
+            if (_inputService.ToggleFreecamPressed && _settings.EnableFreecam)
             {
                 _state.UserEnabled = !_state.UserEnabled;
+                _state.Mode = SpectatorCameraMode.Freecam;
                 _hasPose = false;
                 _recenterRequested = _state.UserEnabled;
                 ModLog.Info(_state.UserEnabled
                     ? "Enhanced spectator freecam enabled."
                     : "Enhanced spectator freecam disabled.");
+            }
+
+            if (_inputService.ToggleThirdPersonPressed && _settings.EnableThirdPerson)
+            {
+                _state.UserEnabled = true;
+                _state.Mode = _state.Mode == SpectatorCameraMode.ThirdPerson
+                    ? SpectatorCameraMode.Freecam
+                    : SpectatorCameraMode.ThirdPerson;
+                _smoothVelocity = Vector3.zero;
+                _lastSmoothingFrame = -1;
+                ModLog.Info(_state.Mode == SpectatorCameraMode.ThirdPerson
+                    ? "Self-ghost third-person view enabled."
+                    : "Self-ghost third-person view disabled; freecam restored.");
+            }
+
+            if (_state.Mode == SpectatorCameraMode.ThirdPerson)
+            {
+                float scrollDelta = _inputService.ReadScrollDelta();
+                if (!Mathf.Approximately(scrollDelta, 0f))
+                {
+                    _thirdPersonDistance = SpectatorThirdPersonCameraRules.ResolveZoomDistance(
+                        _thirdPersonDistance,
+                        scrollDelta,
+                        ThirdPersonZoomStep,
+                        ThirdPersonMinimumDistance,
+                        ThirdPersonMaximumDistance);
+                }
             }
 
             if (_inputService.RecenterPressed)
@@ -266,7 +303,7 @@ public sealed class SpectatorFreecamController
 
     private bool TryGetEligibleSnapshot(out GameSpectatorSnapshot snapshot)
     {
-        if (!_settings.EnableEnhancedSpectator || !_settings.EnableFreecam)
+        if (!_settings.EnableEnhancedSpectator || (!_settings.EnableFreecam && !_settings.EnableThirdPerson))
         {
             DeactivateWithReason(SpectatorFreecamIneligibleReason.FeatureDisabled, GameSpectatorSnapshot.Unavailable, clearAnchor: false);
             snapshot = GameSpectatorSnapshot.Unavailable;
@@ -338,12 +375,15 @@ public sealed class SpectatorFreecamController
     private void EnterSpectatorState()
     {
         _wasSpectating = true;
-        _state.UserEnabled = _settings.FreecamDefaultOn;
+        _state.UserEnabled = _settings.EnableFreecam && _settings.FreecamDefaultOn;
+        _state.Mode = SpectatorCameraMode.Freecam;
+        _thirdPersonDistance = _settings.ThirdPersonDistance;
         _state.IsActive = false;
         _hasPose = false;
-        _recenterRequested = _settings.FreecamDefaultOn;
+        _recenterRequested = _state.UserEnabled;
         _smoothVelocity = Vector3.zero;
         _hasSmoothedPosition = false;
+        _hasPreviousAnchorPosition = false;
         _lastSmoothingFrame = -1;
         _lastPreCullApplyFrame = -1;
         _targetSwitchGraceUntilFrame = -1;
@@ -373,13 +413,18 @@ public sealed class SpectatorFreecamController
         SpectatorVanillaInputGuard.Clear();
         _anchorService.Clear();
         _state.IsActive = false;
-        _state.UserEnabled = _settings.FreecamDefaultOn;
+        _state.UserEnabled = _settings.EnableFreecam && _settings.FreecamDefaultOn;
+        _state.Mode = SpectatorCameraMode.Freecam;
+        _thirdPersonDistance = _settings.ThirdPersonDistance;
         _state.TargetSlotId = null;
         _state.TargetActualClientId = null;
         _state.Offset = Vector3.zero;
         _state.Rotation = Quaternion.identity;
+        _state.RepresentationRotation = Quaternion.identity;
         _state.WorldPosition = Vector3.zero;
+        _state.RenderedWorldPosition = Vector3.zero;
         _state.HasWorldPose = false;
+        _hasPreviousAnchorPosition = false;
         if (hadState)
         {
             ModLog.Debug("Reset local spectator freecam state.");
@@ -399,11 +444,13 @@ public sealed class SpectatorFreecamController
             _anchorService.Clear();
             _hasPose = false;
             _hasSmoothedPosition = false;
+            _hasPreviousAnchorPosition = false;
             _targetSwitchGraceUntilFrame = -1;
             _cameraInactiveGraceStarted = false;
             _state.TargetSlotId = null;
             _state.TargetActualClientId = null;
             _state.WorldPosition = Vector3.zero;
+            _state.RenderedWorldPosition = Vector3.zero;
             _state.HasWorldPose = false;
         }
 
@@ -503,10 +550,13 @@ public sealed class SpectatorFreecamController
         ClampOffset();
         SetYawPitchFromRotation(camera.transform.rotation);
         _state.Rotation = Quaternion.Euler(_pitch, _yaw, 0f);
+        _state.RepresentationRotation = SpectatorThirdPersonCameraRules.ResolveRepresentationRotation(_state.Rotation);
         _smoothVelocity = Vector3.zero;
         _smoothedPosition = camera.transform.position;
         _hasSmoothedPosition = true;
         _lastSmoothingFrame = -1;
+        _previousAnchorPosition = anchor.position;
+        _hasPreviousAnchorPosition = true;
         _hasPose = true;
     }
 
@@ -528,10 +578,13 @@ public sealed class SpectatorFreecamController
         }
 
         _state.Rotation = Quaternion.Euler(_pitch, _yaw, 0f);
+        _state.RepresentationRotation = SpectatorThirdPersonCameraRules.ResolveRepresentationRotation(_state.Rotation);
         _smoothVelocity = Vector3.zero;
         _smoothedPosition = anchor.position + _state.Offset;
         _hasSmoothedPosition = true;
         _lastSmoothingFrame = -1;
+        _previousAnchorPosition = anchor.position;
+        _hasPreviousAnchorPosition = true;
         _hasPose = true;
     }
 
@@ -601,20 +654,39 @@ public sealed class SpectatorFreecamController
         }
 
         _state.Rotation = rotation;
+        _state.RepresentationRotation = SpectatorThirdPersonCameraRules.ResolveRepresentationRotation(_state.Rotation);
     }
 
     private void ApplyCameraTransform(Camera camera, Transform anchor)
     {
-        Vector3 targetPosition = anchor.position + _state.Offset;
+        Vector3 representationTarget = anchor.position + _state.Offset;
         Transform cameraTransform = camera.transform;
 
         if (Time.frameCount != _lastSmoothingFrame)
         {
-            if (_settings.FreecamSmoothTime > 0f && _state.IsActive && _hasSmoothedPosition)
+            bool resetForAnchorTeleport = SpectatorCameraMotionCompensationRules.ShouldResetForAnchorDelta(
+                _previousAnchorPosition,
+                anchor.position,
+                _hasPreviousAnchorPosition && _hasSmoothedPosition,
+                AnchorTeleportThreshold);
+            _smoothedPosition = SpectatorCameraMotionCompensationRules.ApplyAnchorTranslation(
+                _smoothedPosition,
+                _previousAnchorPosition,
+                anchor.position,
+                _hasPreviousAnchorPosition && _hasSmoothedPosition,
+                AnchorTeleportThreshold);
+
+            if (resetForAnchorTeleport)
+            {
+                _smoothedPosition = representationTarget;
+                _hasSmoothedPosition = true;
+                _smoothVelocity = Vector3.zero;
+            }
+            else if (_settings.FreecamSmoothTime > 0f && _state.IsActive && _hasSmoothedPosition)
             {
                 _smoothedPosition = Vector3.SmoothDamp(
                     _smoothedPosition,
-                    targetPosition,
+                    representationTarget,
                     ref _smoothVelocity,
                     _settings.FreecamSmoothTime,
                     float.PositiveInfinity,
@@ -622,26 +694,71 @@ public sealed class SpectatorFreecamController
             }
             else
             {
-                _smoothedPosition = targetPosition;
+                _smoothedPosition = representationTarget;
                 _hasSmoothedPosition = true;
                 _smoothVelocity = Vector3.zero;
             }
 
+            _previousAnchorPosition = anchor.position;
+            _hasPreviousAnchorPosition = true;
             _lastSmoothingFrame = Time.frameCount;
         }
 
-        cameraTransform.position = _smoothedPosition;
-        cameraTransform.rotation = _state.Rotation;
+        Vector3 renderedPosition = _smoothedPosition;
+        Quaternion renderedRotation = _state.Rotation;
+        if (_state.Mode == SpectatorCameraMode.ThirdPerson)
+        {
+            Vector3 desiredPosition = SpectatorThirdPersonCameraRules.ResolveDesiredCameraPosition(
+                _smoothedPosition,
+                _state.Rotation,
+                _thirdPersonDistance,
+                _settings.ThirdPersonHeight);
+            renderedPosition = ResolveThirdPersonCollision(_smoothedPosition, desiredPosition);
+            Vector3 lookDirection = _smoothedPosition - renderedPosition;
+            if (lookDirection.sqrMagnitude > 0.0001f)
+            {
+                renderedRotation = Quaternion.LookRotation(lookDirection.normalized, Vector3.up);
+            }
+        }
+
+        cameraTransform.position = renderedPosition;
+        cameraTransform.rotation = renderedRotation;
         _state.IsActive = true;
         _state.WorldPosition = _smoothedPosition;
+        _state.RenderedWorldPosition = renderedPosition;
         _state.HasWorldPose = true;
 
         if (ModLog.IsDebugEnabled && Time.frameCount >= _nextApplyDebugFrame)
         {
             _nextApplyDebugFrame = Time.frameCount + 120;
             ModLog.Debug(
-                $"Applied freecam camera frame={Time.frameCount} camera={camera.name} offset={_state.Offset} target={targetPosition} rendered={_smoothedPosition}");
+                $"Applied spectator camera frame={Time.frameCount} mode={_state.Mode} camera={camera.name} "
+                + $"offset={_state.Offset} representation={_smoothedPosition} rendered={renderedPosition}");
         }
+    }
+
+    private static Vector3 ResolveThirdPersonCollision(Vector3 representationPosition, Vector3 desiredPosition)
+    {
+        Vector3 direction = desiredPosition - representationPosition;
+        float distance = direction.magnitude;
+        if (distance <= 0.0001f)
+        {
+            return desiredPosition;
+        }
+
+        direction /= distance;
+        if (!Physics.Raycast(
+                representationPosition,
+                direction,
+                out RaycastHit hit,
+                distance,
+                Physics.DefaultRaycastLayers,
+                QueryTriggerInteraction.Ignore))
+        {
+            return desiredPosition;
+        }
+
+        return hit.point - (direction * ThirdPersonCollisionPadding);
     }
 
     private void ClampOffset()

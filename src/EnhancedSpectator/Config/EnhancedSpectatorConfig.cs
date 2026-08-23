@@ -124,7 +124,28 @@ public sealed class EnhancedSpectatorConfig
         ConfigEntry<float> nameTagMaxDistance,
         ConfigEntry<bool> nameTagUseGamePlayerNames,
         ConfigEntry<bool> nameTagUseFallbackIds,
-        ConfigEntry<bool> debugNameTagLifecycle)
+        ConfigEntry<bool> debugNameTagLifecycle,
+        ConfigEntry<EnhancedSpectatorLanguageMode> configLanguage,
+        bool useChineseText,
+        ConfigEntry<bool> enableThirdPerson,
+        ConfigEntry<KeyCode> toggleThirdPersonKey,
+        ConfigEntry<float> thirdPersonDistance,
+        ConfigEntry<float> thirdPersonHeight,
+        ConfigEntry<bool> enableFearModeAsHost,
+        ConfigEntry<bool> renderFearModelsLocally,
+        ConfigEntry<bool> showFearModeQuickMenu,
+        ConfigEntry<float> fearModelTargetHeight,
+        ConfigEntry<bool> fearModelUseOriginalScale,
+        ConfigEntry<float> fearModelScaleMultiplier,
+        ConfigEntry<KeyCode> fearModelPreviousKey,
+        ConfigEntry<KeyCode> fearModelNextKey,
+        ConfigEntry<KeyCode> fearSoundKey,
+        ConfigEntry<KeyCode> fearSoundNextKey,
+        ConfigEntry<float> fearSoundVolume,
+        ConfigEntry<float> fearSoundMinDistance,
+        ConfigEntry<float> fearSoundMaxDistance,
+        ConfigEntry<float> fearSoundCooldownSeconds,
+        ConfigEntry<int> fearSoundMaxNearbyPlayers)
     {
         EnableSpectatorModule = enableSpectatorModule;
         EnableEnhancedSpectator = enableEnhancedSpectator;
@@ -241,6 +262,27 @@ public sealed class EnhancedSpectatorConfig
         NameTagUseGamePlayerNames = nameTagUseGamePlayerNames;
         NameTagUseFallbackIds = nameTagUseFallbackIds;
         DebugNameTagLifecycle = debugNameTagLifecycle;
+        ConfigLanguage = configLanguage;
+        UseChineseText = useChineseText;
+        EnableThirdPerson = enableThirdPerson;
+        ToggleThirdPersonKey = toggleThirdPersonKey;
+        ThirdPersonDistance = thirdPersonDistance;
+        ThirdPersonHeight = thirdPersonHeight;
+        EnableFearModeAsHost = enableFearModeAsHost;
+        RenderFearModelsLocally = renderFearModelsLocally;
+        ShowFearModeQuickMenu = showFearModeQuickMenu;
+        FearModelTargetHeight = fearModelTargetHeight;
+        FearModelUseOriginalScale = fearModelUseOriginalScale;
+        FearModelScaleMultiplier = fearModelScaleMultiplier;
+        FearModelPreviousKey = fearModelPreviousKey;
+        FearModelNextKey = fearModelNextKey;
+        FearSoundKey = fearSoundKey;
+        FearSoundNextKey = fearSoundNextKey;
+        FearSoundVolume = fearSoundVolume;
+        FearSoundMinDistance = fearSoundMinDistance;
+        FearSoundMaxDistance = fearSoundMaxDistance;
+        FearSoundCooldownSeconds = fearSoundCooldownSeconds;
+        FearSoundMaxNearbyPlayers = fearSoundMaxNearbyPlayers;
     }
 
     /// <summary>
@@ -819,10 +861,101 @@ public sealed class EnhancedSpectatorConfig
     public ConfigEntry<bool> DebugNameTagLifecycle { get; }
 
     /// <summary>
+    /// Selects the config and runtime UI language.
+    /// </summary>
+    public ConfigEntry<EnhancedSpectatorLanguageMode> ConfigLanguage { get; }
+
+    /// <summary>
+    /// Gets the language resolved at plugin startup.
+    /// </summary>
+    public bool UseChineseText { get; }
+
+    /// <summary>
+    /// Enables self-ghost third-person spectator mode.
+    /// </summary>
+    public ConfigEntry<bool> EnableThirdPerson { get; }
+
+    /// <summary>
+    /// Toggles self-ghost third-person spectator mode.
+    /// </summary>
+    public ConfigEntry<KeyCode> ToggleThirdPersonKey { get; }
+
+    /// <summary>
+    /// Controls trailing third-person camera distance.
+    /// </summary>
+    public ConfigEntry<float> ThirdPersonDistance { get; }
+
+    /// <summary>
+    /// Controls third-person camera height above the logical ghost.
+    /// </summary>
+    public ConfigEntry<float> ThirdPersonHeight { get; }
+
+    /// <summary>Host-only session gate for player-selected fear visuals.</summary>
+    public ConfigEntry<bool> EnableFearModeAsHost { get; }
+
+    /// <summary>Local viewer opt-in for fear model rendering.</summary>
+    public ConfigEntry<bool> RenderFearModelsLocally { get; }
+
+    /// <summary>Shows the fear-mode selection surface in the ESC quick menu.</summary>
+    public ConfigEntry<bool> ShowFearModeQuickMenu { get; }
+
+    /// <summary>Target world height used to normalize renderer-only monster visuals.</summary>
+    public ConfigEntry<float> FearModelTargetHeight { get; }
+
+    /// <summary>Uses each enemy prefab's original visible size instead of uniform target-height normalization.</summary>
+    public ConfigEntry<bool> FearModelUseOriginalScale { get; }
+
+    /// <summary>Global multiplier applied after original or normalized fear-model scaling.</summary>
+    public ConfigEntry<float> FearModelScaleMultiplier { get; }
+
+    /// <summary>Hotkey used to select the previous fear model.</summary>
+    public ConfigEntry<KeyCode> FearModelPreviousKey { get; }
+
+    /// <summary>Hotkey used to select the next fear model.</summary>
+    public ConfigEntry<KeyCode> FearModelNextKey { get; }
+
+    /// <summary>Hotkey used by a dead player to play the selected monster's fear sound.</summary>
+    public ConfigEntry<KeyCode> FearSoundKey { get; }
+
+    /// <summary>Hotkey used to switch to the next selected-monster sound and play it immediately.</summary>
+    public ConfigEntry<KeyCode> FearSoundNextKey { get; }
+
+    /// <summary>Local playback volume for spatial fear sounds.</summary>
+    public ConfigEntry<float> FearSoundVolume { get; }
+
+    /// <summary>Distance at which spatial fear sound begins attenuating.</summary>
+    public ConfigEntry<float> FearSoundMinDistance { get; }
+
+    /// <summary>Maximum audible distance for spatial fear sound.</summary>
+    public ConfigEntry<float> FearSoundMaxDistance { get; }
+
+    /// <summary>Host-enforced minimum interval between fear sounds from one player.</summary>
+    public ConfigEntry<float> FearSoundCooldownSeconds { get; }
+
+    /// <summary>Maximum nearby player fear sounds heard at once; zero means unlimited.</summary>
+    public ConfigEntry<int> FearSoundMaxNearbyPlayers { get; }
+
+    /// <summary>
     /// Binds all configuration entries from the provided BepInEx config file.
     /// </summary>
-    public static EnhancedSpectatorConfig Bind(ConfigFile config)
+    public static EnhancedSpectatorConfig Bind(
+        ConfigFile config,
+        bool? lcChineseProjectInstalled = null,
+        string? advancedConfigPath = null)
     {
+        bool primarySaveOnConfigSet = config.SaveOnConfigSet;
+        config.SaveOnConfigSet = false;
+        config.Remove(new ConfigDefinition("Spectator.Audio", "MuteSpectatorVoiceKey"));
+        config.Remove(new ConfigDefinition("Spectator.Audio", "ShowSpectatorVoiceMuteHud"));
+        ConfigEntry<EnhancedSpectatorLanguageMode> configLanguage = config.Bind(
+            "General",
+            "ConfigLanguage",
+            EnhancedSpectatorLanguageMode.Auto,
+            "Config/UI language. Auto uses Chinese when LC Chinese Project is installed. 配置与界面语言；Auto 在检测到 LC Chinese Project 时使用中文。");
+        bool useChineseText = EnhancedSpectatorLanguageRules.UseChinese(
+            configLanguage.Value,
+            lcChineseProjectInstalled ?? LCChineseProjectDetection.IsInstalled());
+
         ConfigEntry<bool> enableSpectatorModule = config.Bind(
             "Features",
             "EnableSpectatorModule",
@@ -833,31 +966,31 @@ public sealed class EnhancedSpectatorConfig
             "Spectator.Freecam",
             "EnableEnhancedSpectator",
             true,
-            "Enables all enhanced spectator behavior.");
+            EnhancedSpectatorText.Select(useChineseText, "Enables all enhanced spectator behavior.", "启用全部增强观战行为。"));
 
         ConfigEntry<bool> enableFreecam = config.Bind(
             "Spectator.Freecam",
             "EnableFreecam",
             true,
-            "Enables local spectator freecam behavior.");
+            EnhancedSpectatorText.Select(useChineseText, "Enables local spectator freecam behavior.", "启用本地死亡观战自由镜头。"));
 
         ConfigEntry<bool> freecamDefaultOn = config.Bind(
             "Spectator.Freecam",
             "FreecamDefaultOn",
             true,
-            "Automatically enables freecam after entering vanilla spectator state.");
+            EnhancedSpectatorText.Select(useChineseText, "Automatically enables freecam after entering vanilla spectator state.", "进入原版死亡观战状态后自动启用自由镜头。"));
 
         ConfigEntry<float> freecamRadius = config.Bind(
             "Spectator.Freecam",
             "FreecamRadius",
             8.0f,
-            "Maximum freecam offset radius from the current target anchor.");
+            EnhancedSpectatorText.Select(useChineseText, "Maximum freecam offset radius from the current target anchor.", "自由镜头相对当前观战目标锚点的最大半径。"));
 
         ConfigEntry<float> freecamMoveSpeed = config.Bind(
             "Spectator.Freecam",
             "FreecamMoveSpeed",
             4.0f,
-            "Base freecam movement speed in units per second.");
+            EnhancedSpectatorText.Select(useChineseText, "Base freecam movement speed in units per second.", "自由镜头基础移动速度。"));
 
         ConfigEntry<float> freecamFastMoveMultiplier = config.Bind(
             "Spectator.Freecam",
@@ -881,7 +1014,7 @@ public sealed class EnhancedSpectatorConfig
             "Spectator.Freecam",
             "FreecamSmoothTime",
             0.04f,
-            "Smooth damp time for camera position. Set to 0 to disable smoothing.");
+            EnhancedSpectatorText.Select(useChineseText, "Smooth damp time for camera position. Set to 0 to disable smoothing.", "镜头位置平滑时间；设为 0 可关闭平滑。"));
 
         ConfigEntry<bool> clampCameraToRadius = config.Bind(
             "Spectator.Freecam",
@@ -905,7 +1038,7 @@ public sealed class EnhancedSpectatorConfig
             "Spectator.Freecam.Keys",
             "ToggleFreecamKey",
             KeyCode.F6,
-            "Toggles enhanced freecam while spectating.");
+            EnhancedSpectatorText.Select(useChineseText, "Toggles enhanced freecam while spectating.", "旁观时切换增强自由镜头。"));
 
         ConfigEntry<KeyCode> recenterKey = config.Bind(
             "Spectator.Freecam.Keys",
@@ -917,7 +1050,7 @@ public sealed class EnhancedSpectatorConfig
             "Spectator.Freecam.Keys",
             "ResetToVanillaViewKey",
             KeyCode.F7,
-            "Disables enhanced freecam and returns to vanilla spectator camera until toggled again.");
+            EnhancedSpectatorText.Select(useChineseText, "Disables enhanced freecam and returns to vanilla spectator camera until toggled again.", "关闭增强镜头并返回原版观战视角，直到再次切换。"));
 
         ConfigEntry<KeyCode> fastMoveKey = config.Bind(
             "Spectator.Freecam.Keys",
@@ -942,6 +1075,162 @@ public sealed class EnhancedSpectatorConfig
             "DescendKey",
             KeyCode.LeftControl,
             "Moves the freecam downward while held.");
+
+        ConfigEntry<bool> enableThirdPerson = config.Bind(
+            "Spectator.ThirdPerson",
+            "EnableThirdPerson",
+            true,
+            EnhancedSpectatorText.Select(
+                useChineseText,
+                "Enables third-person viewing of your own ghost while dead.",
+                "死亡后允许以第三人称观察自己的鬼魂。"));
+
+        ConfigEntry<KeyCode> toggleThirdPersonKey = config.Bind(
+            "Spectator.ThirdPerson",
+            "ToggleThirdPersonKey",
+            KeyCode.F3,
+            EnhancedSpectatorText.Select(
+                useChineseText,
+                "Toggles self-ghost third-person view while spectating.",
+                "旁观时切换观察自身鬼魂的第三人称视角。"));
+
+        ConfigEntry<float> thirdPersonDistance = config.Bind(
+            "Spectator.ThirdPerson",
+            "ThirdPersonDistance",
+            5.0f,
+            EnhancedSpectatorText.Select(
+                useChineseText,
+                "Default distance behind your logical ghost. Use the mouse wheel in third person to zoom.",
+                "第三人称相机与自身鬼魂的默认距离；第三人称中可用鼠标滚轮缩放。"));
+
+        ConfigEntry<float> thirdPersonHeight = config.Bind(
+            "Spectator.ThirdPerson",
+            "ThirdPersonHeight",
+            0.45f,
+            EnhancedSpectatorText.Select(
+                useChineseText,
+                "Height above your logical ghost used by third-person view.",
+                "第三人称相机相对自身鬼魂的高度。"));
+
+        ConfigEntry<bool> enableFearModeAsHost = config.Bind(
+            "FearMode",
+            "EnableFearModeAsHost",
+            false,
+            EnhancedSpectatorText.Select(
+                useChineseText,
+                "Host-only gate allowing dead players to select and relay safe fear visuals for this session.",
+                "仅房主生效：允许死亡玩家在本局选择并中继安全恐惧外观。"));
+
+        ConfigEntry<bool> renderFearModelsLocally = config.Bind(
+            "FearMode",
+            "RenderFearModelsLocally",
+            false,
+            EnhancedSpectatorText.Select(
+                useChineseText,
+                "Shows validated player-selected fear models on this client. Off always uses default ghost heads.",
+                "本客户端显示已验证的玩家自选恐惧模型；关闭时始终显示默认鬼头。"));
+
+        ConfigEntry<bool> showFearModeQuickMenu = config.Bind(
+            "FearMode",
+            "ShowFearModeQuickMenu",
+            true,
+            EnhancedSpectatorText.Select(
+                useChineseText,
+                "Shows the local fear model selector while the ESC menu is open and the player is dead.",
+                "死亡后打开 ESC 菜单时显示本地恐惧模型选择器。"));
+
+        ConfigEntry<float> fearModelTargetHeight = config.Bind(
+            "FearMode",
+            "FearModelTargetHeight",
+            0.75f,
+            EnhancedSpectatorText.Select(
+                useChineseText,
+                "Normalizes renderer-only monster visuals to this approximate world height.",
+                "将纯渲染怪物外观归一化到此近似世界高度。"));
+
+        ConfigEntry<bool> fearModelUseOriginalScale = config.Bind(
+            "FearMode",
+            "FearModelUseOriginalScale",
+            true,
+            EnhancedSpectatorText.Select(
+                useChineseText,
+                "Uses each monster prefab's original game size. Disable to use FearModelTargetHeight normalization.",
+                "使用每个怪物 prefab 的原版游戏尺寸；关闭后改用 FearModelTargetHeight 统一高度。"));
+
+        ConfigEntry<float> fearModelScaleMultiplier = config.Bind(
+            "FearMode",
+            "FearModelScaleMultiplier",
+            1.0f,
+            EnhancedSpectatorText.Select(
+                useChineseText,
+                "Global multiplier applied to all fear-model sizes.",
+                "应用于全部恐惧模型尺寸的全局倍率。"));
+
+        ConfigEntry<KeyCode> fearModelPreviousKey = config.Bind(
+            "FearMode",
+            "FearModelPreviousKey",
+            KeyCode.LeftArrow,
+            EnhancedSpectatorText.Select(
+                useChineseText,
+                "Selects the previous fear model while dead.",
+                "死亡后快捷切换到上一个恐惧模型。"));
+
+        ConfigEntry<KeyCode> fearModelNextKey = config.Bind(
+            "FearMode",
+            "FearModelNextKey",
+            KeyCode.RightArrow,
+            EnhancedSpectatorText.Select(
+                useChineseText,
+                "Selects the next fear model while dead.",
+                "死亡后快捷切换到下一个恐惧模型。"));
+
+        ConfigEntry<KeyCode> fearSoundKey = config.Bind(
+            "FearMode",
+            "FearSoundKey",
+            KeyCode.Z,
+            EnhancedSpectatorText.Select(
+                useChineseText,
+                "Plays the selected monster's spatial fear sound while fear mode is active and you are dead.",
+                "恐惧模式生效且已死亡时，播放所选怪物的空间恐惧音效。"));
+
+        ConfigEntry<KeyCode> fearSoundNextKey = config.Bind(
+            "FearMode",
+            "FearSoundNextKey",
+            KeyCode.X,
+            EnhancedSpectatorText.Select(
+                useChineseText,
+                "Switches to the next selected-monster sound and plays it immediately.",
+                "切换到所选怪物的下一条音效并立即播放。"));
+
+        ConfigEntry<float> fearSoundVolume = config.Bind(
+            "FearMode",
+            "FearSoundVolume",
+            1f,
+            "Local volume for positional fear sounds (0-1).");
+
+        ConfigEntry<float> fearSoundMinDistance = config.Bind(
+            "FearMode",
+            "FearSoundMinDistance",
+            2f,
+            "Distance where positional fear sound attenuation begins.");
+
+        ConfigEntry<float> fearSoundMaxDistance = config.Bind(
+            "FearMode",
+            "FearSoundMaxDistance",
+            35f,
+            "Maximum audible distance for positional fear sounds.");
+
+        ConfigEntry<float> fearSoundCooldownSeconds = config.Bind(
+            "FearMode",
+            "FearSoundCooldownSeconds",
+            2f,
+            "Host-enforced minimum interval between fear sounds from one player.");
+
+        ConfigEntry<int> fearSoundMaxNearbyPlayers = config.Bind(
+            "FearMode",
+            "FearSoundMaxNearbyPlayers",
+            0,
+            "Maximum nearby players whose fear sounds are audible at once. 0 means unlimited. 周围最多同时听到几个玩家的恐惧音效；0 表示不限。");
 
         ConfigEntry<bool> enableDebugLogging = config.Bind(
             "Logging",
@@ -977,7 +1266,7 @@ public sealed class EnhancedSpectatorConfig
             "Networking",
             "EnableHostRelay",
             true,
-            "Enables host-mediated relay of compatible client spectator target and pose state to other modded clients. Required for Client A -> Client B visibility in three-player rooms.");
+            EnhancedSpectatorText.Select(useChineseText, "Enables host-mediated relay of compatible client spectator state to other modded clients.", "启用房主中继，将兼容客户端的观战状态发送给其他已安装客户端。"));
 
         ConfigEntry<float> spectatorPoseSyncInterval = config.Bind(
             "Networking",
@@ -1013,19 +1302,19 @@ public sealed class EnhancedSpectatorConfig
             "VoiceRouting",
             "EnableSpectatorVoiceToTarget",
             true,
-            "Enables modded players to hear remote dead spectators according to SpectatorVoiceAudienceMode. Only applies between peers that advertised Enhanced Spectator voice-routing support.");
+            EnhancedSpectatorText.Select(useChineseText, "Enables routed dead-spectator voice between compatible Enhanced Spectator peers.", "允许兼容的 Enhanced Spectator 玩家听到路由后的死亡观战者语音。"));
 
         ConfigEntry<SpectatorVoiceAudienceMode> spectatorVoiceAudienceMode = config.Bind(
             "VoiceRouting",
             "SpectatorVoiceAudienceMode",
             EnhancedSpectator.Config.SpectatorVoiceAudienceMode.AllModdedPlayers,
-            "Controls who can hear routed dead spectator voice: WatchedTargetOnly, AllModdedPlayers, AliveModdedPlayersOnly, or DeadModdedPlayersOnly.");
+            EnhancedSpectatorText.Select(useChineseText, "Controls which compatible players hear routed dead-spectator voice.", "控制哪些兼容玩家可以听到路由后的死亡观战者语音。"));
 
         ConfigEntry<float> spectatorVoiceToTargetVolume = config.Bind(
             "VoiceRouting",
             "SpectatorVoiceToTargetVolume",
             1.0f,
-            "Local playback volume for routed spectator voice. This writes only local Dissonance playback volume for eligible dead spectators.");
+            EnhancedSpectatorText.Select(useChineseText, "Local playback volume for routed spectator voice.", "路由观战者语音的本地播放音量。"));
 
         ConfigEntry<bool> spectatorVoiceUseRemotePosePosition = config.Bind(
             "VoiceRouting",
@@ -1085,7 +1374,7 @@ public sealed class EnhancedSpectatorConfig
             "Networking",
             "RepairVanillaPlayerNames",
             true,
-            "Applies synced Enhanced Spectator peer names, or a vanilla Steam lobby fallback when no mod peer identity is available, to repaired player scripts and the ESC player list when vanilla still reports generic Player # names.");
+            EnhancedSpectatorText.Select(useChineseText, "Repairs generic player names using synced identity and conservative vanilla fallbacks.", "使用同步身份和保守的原版回退修复通用玩家名称。"));
 
         ConfigEntry<bool> debugPlayerStateRepair = config.Bind(
             "Networking",
@@ -1229,7 +1518,7 @@ public sealed class EnhancedSpectatorConfig
             "FloatingHead",
             "EnableFloatingHeadVisuals",
             true,
-            "Enables local placeholder visuals for remote modded spectators watching the local player.");
+            EnhancedSpectatorText.Select(useChineseText, "Enables local visuals for remote modded spectators.", "显示远程已安装玩家的观战者外观。"));
 
         ConfigEntry<bool> enablePlaceholderVisuals = config.Bind(
             "FloatingHead",
@@ -1241,7 +1530,7 @@ public sealed class EnhancedSpectatorConfig
             "FloatingHead",
             "UseRuntimeDetachedHeadVisuals",
             true,
-            "Uses the loaded ghost-girl ragdoll detached-head template as a runtime-only marker source when available. Placeholder visuals remain the fallback when the runtime source is unavailable.");
+            EnhancedSpectatorText.Select(useChineseText, "Uses the loaded detached-head template as the default runtime ghost head when available.", "可用时使用已加载的断头模板作为默认运行时鬼头。"));
 
         ConfigEntry<float> runtimeDetachedHeadScale = config.Bind(
             "FloatingHead",
@@ -1277,7 +1566,7 @@ public sealed class EnhancedSpectatorConfig
             "FloatingHead",
             "ShowRemoteSpectators",
             true,
-            "Shows remote modded players whenever they are in spectator state and a remote pose is available.");
+            EnhancedSpectatorText.Select(useChineseText, "Shows remote modded players while they are spectating and have a valid pose.", "远程已安装玩家处于观战状态且姿态有效时显示其外观。"));
 
         ConfigEntry<bool> showOnlySpectatorsWatchingMe = config.Bind(
             "FloatingHead",
@@ -1301,7 +1590,7 @@ public sealed class EnhancedSpectatorConfig
             "FloatingHead",
             "MaxFloatingHeadsVisible",
             8,
-            "Maximum number of remote spectator placeholders visible at once. Set to 0 to hide all placeholders.");
+            EnhancedSpectatorText.Select(useChineseText, "Maximum remote spectator visuals shown at once. Set to 0 to hide them.", "同时显示的远程观战者外观上限；设为 0 可全部隐藏。"));
 
         ConfigEntry<FloatingHeadVisualStyle> visualStyle = config.Bind(
             "FloatingHead",
@@ -1475,7 +1764,7 @@ public sealed class EnhancedSpectatorConfig
             "NameTag",
             "ShowNameTags",
             true,
-            "Shows runtime-only fallback identity labels above floating-head placeholders.");
+            EnhancedSpectatorText.Select(useChineseText, "Shows runtime identity labels above spectator visuals.", "在观战者外观上方显示运行时身份名称。"));
 
         ConfigEntry<float> nameTagScale = config.Bind(
             "NameTag",
@@ -1512,6 +1801,121 @@ public sealed class EnhancedSpectatorConfig
             "DebugNameTagLifecycle",
             false,
             "Reserved for verbose name tag diagnostics.");
+
+        ConfigFile advancedConfig = AdvancedConfigBinding.Create(advancedConfigPath, out bool migrateToAdvanced);
+        bool advancedSaveOnConfigSet = advancedConfig.SaveOnConfigSet;
+        advancedConfig.SaveOnConfigSet = false;
+        enableSpectatorModule = AdvancedConfigBinding.Move(config, advancedConfig, enableSpectatorModule, migrateToAdvanced);
+        freecamFastMoveMultiplier = AdvancedConfigBinding.Move(config, advancedConfig, freecamFastMoveMultiplier, migrateToAdvanced);
+        freecamSlowMoveMultiplier = AdvancedConfigBinding.Move(config, advancedConfig, freecamSlowMoveMultiplier, migrateToAdvanced);
+        freecamLookSensitivity = AdvancedConfigBinding.Move(config, advancedConfig, freecamLookSensitivity, migrateToAdvanced);
+        clampCameraToRadius = AdvancedConfigBinding.Move(config, advancedConfig, clampCameraToRadius, migrateToAdvanced);
+        recenterOnTargetSwitch = AdvancedConfigBinding.Move(config, advancedConfig, recenterOnTargetSwitch, migrateToAdvanced);
+        disableDuringGameOverOverride = AdvancedConfigBinding.Move(config, advancedConfig, disableDuringGameOverOverride, migrateToAdvanced);
+        recenterKey = AdvancedConfigBinding.Move(config, advancedConfig, recenterKey, migrateToAdvanced);
+        fastMoveKey = AdvancedConfigBinding.Move(config, advancedConfig, fastMoveKey, migrateToAdvanced);
+        slowMoveKey = AdvancedConfigBinding.Move(config, advancedConfig, slowMoveKey, migrateToAdvanced);
+        ascendKey = AdvancedConfigBinding.Move(config, advancedConfig, ascendKey, migrateToAdvanced);
+        descendKey = AdvancedConfigBinding.Move(config, advancedConfig, descendKey, migrateToAdvanced);
+        enableDebugLogging = AdvancedConfigBinding.Move(config, advancedConfig, enableDebugLogging, migrateToAdvanced);
+        enableNetworking = AdvancedConfigBinding.Move(config, advancedConfig, enableNetworking, migrateToAdvanced);
+        enableCapabilityHandshake = AdvancedConfigBinding.Move(config, advancedConfig, enableCapabilityHandshake, migrateToAdvanced);
+        enableSpectatorTargetSync = AdvancedConfigBinding.Move(config, advancedConfig, enableSpectatorTargetSync, migrateToAdvanced);
+        enableSpectatorPoseSync = AdvancedConfigBinding.Move(config, advancedConfig, enableSpectatorPoseSync, migrateToAdvanced);
+        spectatorPoseSyncInterval = AdvancedConfigBinding.Move(config, advancedConfig, spectatorPoseSyncInterval, migrateToAdvanced);
+        enableVoiceActivitySync = AdvancedConfigBinding.Move(config, advancedConfig, enableVoiceActivitySync, migrateToAdvanced);
+        voiceActivitySyncInterval = AdvancedConfigBinding.Move(config, advancedConfig, voiceActivitySyncInterval, migrateToAdvanced);
+        voiceActivityStaleSeconds = AdvancedConfigBinding.Move(config, advancedConfig, voiceActivityStaleSeconds, migrateToAdvanced);
+        debugVoiceActivitySync = AdvancedConfigBinding.Move(config, advancedConfig, debugVoiceActivitySync, migrateToAdvanced);
+        spectatorVoiceUseRemotePosePosition = AdvancedConfigBinding.Move(config, advancedConfig, spectatorVoiceUseRemotePosePosition, migrateToAdvanced);
+        spectatorVoiceEnableDistanceAttenuation = AdvancedConfigBinding.Move(config, advancedConfig, spectatorVoiceEnableDistanceAttenuation, migrateToAdvanced);
+        spectatorVoiceMinDistance = AdvancedConfigBinding.Move(config, advancedConfig, spectatorVoiceMinDistance, migrateToAdvanced);
+        spectatorVoiceMaxDistance = AdvancedConfigBinding.Move(config, advancedConfig, spectatorVoiceMaxDistance, migrateToAdvanced);
+        spectatorVoiceRolloffPower = AdvancedConfigBinding.Move(config, advancedConfig, spectatorVoiceRolloffPower, migrateToAdvanced);
+        spectatorVoiceMinimumVolume = AdvancedConfigBinding.Move(config, advancedConfig, spectatorVoiceMinimumVolume, migrateToAdvanced);
+        spectatorVoiceFallbackTo2DWhenPoseMissing = AdvancedConfigBinding.Move(config, advancedConfig, spectatorVoiceFallbackTo2DWhenPoseMissing, migrateToAdvanced);
+        debugSpectatorVoiceRouting = AdvancedConfigBinding.Move(config, advancedConfig, debugSpectatorVoiceRouting, migrateToAdvanced);
+        repairVanillaConnectedPlayerState = AdvancedConfigBinding.Move(config, advancedConfig, repairVanillaConnectedPlayerState, migrateToAdvanced);
+        debugPlayerStateRepair = AdvancedConfigBinding.Move(config, advancedConfig, debugPlayerStateRepair, migrateToAdvanced);
+        debugNetworkMessages = AdvancedConfigBinding.Move(config, advancedConfig, debugNetworkMessages, migrateToAdvanced);
+        debugPoseMessages = AdvancedConfigBinding.Move(config, advancedConfig, debugPoseMessages, migrateToAdvanced);
+        enableSpectatorPresenceDebug = AdvancedConfigBinding.Move(config, advancedConfig, enableSpectatorPresenceDebug, migrateToAdvanced);
+        debugLogPresenceChanges = AdvancedConfigBinding.Move(config, advancedConfig, debugLogPresenceChanges, migrateToAdvanced);
+        enableModelInspection = AdvancedConfigBinding.Move(config, advancedConfig, enableModelInspection, migrateToAdvanced);
+        logLocalPlayerModelOnKey = AdvancedConfigBinding.Move(config, advancedConfig, logLocalPlayerModelOnKey, migrateToAdvanced);
+        logRemotePlayerModelsOnKey = AdvancedConfigBinding.Move(config, advancedConfig, logRemotePlayerModelsOnKey, migrateToAdvanced);
+        modelInspectionKey = AdvancedConfigBinding.Move(config, advancedConfig, modelInspectionKey, migrateToAdvanced);
+        includeRendererBounds = AdvancedConfigBinding.Move(config, advancedConfig, includeRendererBounds, migrateToAdvanced);
+        includeMaterials = AdvancedConfigBinding.Move(config, advancedConfig, includeMaterials, migrateToAdvanced);
+        maxTransformDepth = AdvancedConfigBinding.Move(config, advancedConfig, maxTransformDepth, migrateToAdvanced);
+        enableRuntimeHeadSourceInspection = AdvancedConfigBinding.Move(config, advancedConfig, enableRuntimeHeadSourceInspection, migrateToAdvanced);
+        runtimeHeadSourceInspectionKey = AdvancedConfigBinding.Move(config, advancedConfig, runtimeHeadSourceInspectionKey, migrateToAdvanced);
+        runtimeHeadSourceIncludeRendererBounds = AdvancedConfigBinding.Move(config, advancedConfig, runtimeHeadSourceIncludeRendererBounds, migrateToAdvanced);
+        runtimeHeadSourceIncludeMaterials = AdvancedConfigBinding.Move(config, advancedConfig, runtimeHeadSourceIncludeMaterials, migrateToAdvanced);
+        runtimeHeadSourceMaxTransformDepth = AdvancedConfigBinding.Move(config, advancedConfig, runtimeHeadSourceMaxTransformDepth, migrateToAdvanced);
+        enableVoiceDiagnostics = AdvancedConfigBinding.Move(config, advancedConfig, enableVoiceDiagnostics, migrateToAdvanced);
+        voiceDiagnosticsKey = AdvancedConfigBinding.Move(config, advancedConfig, voiceDiagnosticsKey, migrateToAdvanced);
+        logLocalVoiceStateOnKey = AdvancedConfigBinding.Move(config, advancedConfig, logLocalVoiceStateOnKey, migrateToAdvanced);
+        logRemoteVoiceStatesOnKey = AdvancedConfigBinding.Move(config, advancedConfig, logRemoteVoiceStatesOnKey, migrateToAdvanced);
+        includeVoiceAudioSourceDetails = AdvancedConfigBinding.Move(config, advancedConfig, includeVoiceAudioSourceDetails, migrateToAdvanced);
+        includeWalkieVoiceDiagnostics = AdvancedConfigBinding.Move(config, advancedConfig, includeWalkieVoiceDiagnostics, migrateToAdvanced);
+        enablePlaceholderVisuals = AdvancedConfigBinding.Move(config, advancedConfig, enablePlaceholderVisuals, migrateToAdvanced);
+        runtimeDetachedHeadScale = AdvancedConfigBinding.Move(config, advancedConfig, runtimeDetachedHeadScale, migrateToAdvanced);
+        runtimeDetachedHeadPitchOffset = AdvancedConfigBinding.Move(config, advancedConfig, runtimeDetachedHeadPitchOffset, migrateToAdvanced);
+        runtimeDetachedHeadYawOffset = AdvancedConfigBinding.Move(config, advancedConfig, runtimeDetachedHeadYawOffset, migrateToAdvanced);
+        runtimeDetachedHeadRollOffset = AdvancedConfigBinding.Move(config, advancedConfig, runtimeDetachedHeadRollOffset, migrateToAdvanced);
+        fallbackToPlaceholderWhenDetachedHeadUnavailable = AdvancedConfigBinding.Move(config, advancedConfig, fallbackToPlaceholderWhenDetachedHeadUnavailable, migrateToAdvanced);
+        showOnlySpectatorsWatchingMe = AdvancedConfigBinding.Move(config, advancedConfig, showOnlySpectatorsWatchingMe, migrateToAdvanced);
+        showDeadSpectatorsToAlivePlayers = AdvancedConfigBinding.Move(config, advancedConfig, showDeadSpectatorsToAlivePlayers, migrateToAdvanced);
+        showDeadSpectatorsToDeadPlayers = AdvancedConfigBinding.Move(config, advancedConfig, showDeadSpectatorsToDeadPlayers, migrateToAdvanced);
+        visualStyle = AdvancedConfigBinding.Move(config, advancedConfig, visualStyle, migrateToAdvanced);
+        placeholderScale = AdvancedConfigBinding.Move(config, advancedConfig, placeholderScale, migrateToAdvanced);
+        billboardSize = AdvancedConfigBinding.Move(config, advancedConfig, billboardSize, migrateToAdvanced);
+        baseAlpha = AdvancedConfigBinding.Move(config, advancedConfig, baseAlpha, migrateToAdvanced);
+        useUnlitMaterial = AdvancedConfigBinding.Move(config, advancedConfig, useUnlitMaterial, migrateToAdvanced);
+        enableDepthTest = AdvancedConfigBinding.Move(config, advancedConfig, enableDepthTest, migrateToAdvanced);
+        floatingHeadRingRadius = AdvancedConfigBinding.Move(config, advancedConfig, floatingHeadRingRadius, migrateToAdvanced);
+        floatingHeadHeightOffset = AdvancedConfigBinding.Move(config, advancedConfig, floatingHeadHeightOffset, migrateToAdvanced);
+        useCameraVisiblePlacement = AdvancedConfigBinding.Move(config, advancedConfig, useCameraVisiblePlacement, migrateToAdvanced);
+        cameraForwardOffset = AdvancedConfigBinding.Move(config, advancedConfig, cameraForwardOffset, migrateToAdvanced);
+        remotePoseSmoothTime = AdvancedConfigBinding.Move(config, advancedConfig, remotePoseSmoothTime, migrateToAdvanced);
+        keepRemotePoseInView = AdvancedConfigBinding.Move(config, advancedConfig, keepRemotePoseInView, migrateToAdvanced);
+        remotePoseVisibleProxyDistance = AdvancedConfigBinding.Move(config, advancedConfig, remotePoseVisibleProxyDistance, migrateToAdvanced);
+        enableScreenFallbackVisual = AdvancedConfigBinding.Move(config, advancedConfig, enableScreenFallbackVisual, migrateToAdvanced);
+        screenFallbackSize = AdvancedConfigBinding.Move(config, advancedConfig, screenFallbackSize, migrateToAdvanced);
+        presenceLostGraceSeconds = AdvancedConfigBinding.Move(config, advancedConfig, presenceLostGraceSeconds, migrateToAdvanced);
+        floatingHeadFaceCamera = AdvancedConfigBinding.Move(config, advancedConfig, floatingHeadFaceCamera, migrateToAdvanced);
+        pulseWhenSpeaking = AdvancedConfigBinding.Move(config, advancedConfig, pulseWhenSpeaking, migrateToAdvanced);
+        speakingScaleMultiplier = AdvancedConfigBinding.Move(config, advancedConfig, speakingScaleMultiplier, migrateToAdvanced);
+        speakingPulseSpeed = AdvancedConfigBinding.Move(config, advancedConfig, speakingPulseSpeed, migrateToAdvanced);
+        minimumSpeakingVoiceLevel = AdvancedConfigBinding.Move(config, advancedConfig, minimumSpeakingVoiceLevel, migrateToAdvanced);
+        speakingPulseAmount = AdvancedConfigBinding.Move(config, advancedConfig, speakingPulseAmount, migrateToAdvanced);
+        voiceAttackSmoothTime = AdvancedConfigBinding.Move(config, advancedConfig, voiceAttackSmoothTime, migrateToAdvanced);
+        voiceReleaseSmoothTime = AdvancedConfigBinding.Move(config, advancedConfig, voiceReleaseSmoothTime, migrateToAdvanced);
+        silenceScaleMultiplier = AdvancedConfigBinding.Move(config, advancedConfig, silenceScaleMultiplier, migrateToAdvanced);
+        amplitudeSmoothing = AdvancedConfigBinding.Move(config, advancedConfig, amplitudeSmoothing, migrateToAdvanced);
+        destroyOnPresenceLost = AdvancedConfigBinding.Move(config, advancedConfig, destroyOnPresenceLost, migrateToAdvanced);
+        debugVisualLifecycle = AdvancedConfigBinding.Move(config, advancedConfig, debugVisualLifecycle, migrateToAdvanced);
+        nameTagScale = AdvancedConfigBinding.Move(config, advancedConfig, nameTagScale, migrateToAdvanced);
+        nameTagHeightOffset = AdvancedConfigBinding.Move(config, advancedConfig, nameTagHeightOffset, migrateToAdvanced);
+        nameTagMaxDistance = AdvancedConfigBinding.Move(config, advancedConfig, nameTagMaxDistance, migrateToAdvanced);
+        nameTagUseGamePlayerNames = AdvancedConfigBinding.Move(config, advancedConfig, nameTagUseGamePlayerNames, migrateToAdvanced);
+        nameTagUseFallbackIds = AdvancedConfigBinding.Move(config, advancedConfig, nameTagUseFallbackIds, migrateToAdvanced);
+        debugNameTagLifecycle = AdvancedConfigBinding.Move(config, advancedConfig, debugNameTagLifecycle, migrateToAdvanced);
+        thirdPersonHeight = AdvancedConfigBinding.Move(config, advancedConfig, thirdPersonHeight, migrateToAdvanced);
+        fearModelTargetHeight = AdvancedConfigBinding.Move(config, advancedConfig, fearModelTargetHeight, migrateToAdvanced);
+        fearModelScaleMultiplier = AdvancedConfigBinding.Move(config, advancedConfig, fearModelScaleMultiplier, migrateToAdvanced);
+        fearModelPreviousKey = AdvancedConfigBinding.Move(config, advancedConfig, fearModelPreviousKey, migrateToAdvanced);
+        fearModelNextKey = AdvancedConfigBinding.Move(config, advancedConfig, fearModelNextKey, migrateToAdvanced);
+        fearSoundVolume = AdvancedConfigBinding.Move(config, advancedConfig, fearSoundVolume, migrateToAdvanced);
+        fearSoundMinDistance = AdvancedConfigBinding.Move(config, advancedConfig, fearSoundMinDistance, migrateToAdvanced);
+        fearSoundMaxDistance = AdvancedConfigBinding.Move(config, advancedConfig, fearSoundMaxDistance, migrateToAdvanced);
+        fearSoundCooldownSeconds = AdvancedConfigBinding.Move(config, advancedConfig, fearSoundCooldownSeconds, migrateToAdvanced);
+        fearSoundMaxNearbyPlayers = AdvancedConfigBinding.Move(config, advancedConfig, fearSoundMaxNearbyPlayers, migrateToAdvanced);
+        advancedConfig.SaveOnConfigSet = advancedSaveOnConfigSet;
+        advancedConfig.Save();
+        config.SaveOnConfigSet = primarySaveOnConfigSet;
+        config.Save();
 
         return new EnhancedSpectatorConfig(
             enableSpectatorModule,
@@ -1628,6 +2032,27 @@ public sealed class EnhancedSpectatorConfig
             nameTagMaxDistance,
             nameTagUseGamePlayerNames,
             nameTagUseFallbackIds,
-            debugNameTagLifecycle);
+            debugNameTagLifecycle,
+            configLanguage,
+            useChineseText,
+            enableThirdPerson,
+            toggleThirdPersonKey,
+            thirdPersonDistance,
+            thirdPersonHeight,
+            enableFearModeAsHost,
+            renderFearModelsLocally,
+            showFearModeQuickMenu,
+            fearModelTargetHeight,
+            fearModelUseOriginalScale,
+            fearModelScaleMultiplier,
+            fearModelPreviousKey,
+            fearModelNextKey,
+            fearSoundKey,
+            fearSoundNextKey,
+            fearSoundVolume,
+            fearSoundMinDistance,
+            fearSoundMaxDistance,
+            fearSoundCooldownSeconds,
+            fearSoundMaxNearbyPlayers);
     }
 }

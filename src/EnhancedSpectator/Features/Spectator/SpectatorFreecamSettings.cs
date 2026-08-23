@@ -79,6 +79,21 @@ public sealed class SpectatorFreecamSettings
     public bool DisableDuringGameOverOverride => _config.DisableDuringGameOverOverride.Value;
 
     /// <summary>
+    /// Gets whether self-ghost third-person view is enabled.
+    /// </summary>
+    public bool EnableThirdPerson => _config.EnableThirdPerson.Value;
+
+    /// <summary>
+    /// Gets the trailing third-person camera distance.
+    /// </summary>
+    public float ThirdPersonDistance => Mathf.Max(0.25f, _config.ThirdPersonDistance.Value);
+
+    /// <summary>
+    /// Gets the third-person camera height offset.
+    /// </summary>
+    public float ThirdPersonHeight => _config.ThirdPersonHeight.Value;
+
+    /// <summary>
     /// Gets the key that toggles enhanced freecam.
     /// </summary>
     public KeyCode ToggleFreecamKey => _config.ToggleFreecamKey.Value;
@@ -92,6 +107,11 @@ public sealed class SpectatorFreecamSettings
     /// Gets the key that disables enhanced freecam until toggled again.
     /// </summary>
     public KeyCode ResetToVanillaViewKey => _config.ResetToVanillaViewKey.Value;
+
+    /// <summary>
+    /// Gets the key that toggles self-ghost third-person view.
+    /// </summary>
+    public KeyCode ToggleThirdPersonKey => _config.ToggleThirdPersonKey.Value;
 
     /// <summary>
     /// Gets the fast movement modifier key.

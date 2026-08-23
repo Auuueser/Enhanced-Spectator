@@ -1,4 +1,5 @@
 using EnhancedSpectator.Features.Spectator;
+using EnhancedSpectator.Features.SpectatorPresence;
 using GameNetcodeStuff;
 using UnityEngine;
 
@@ -7,7 +8,10 @@ namespace EnhancedSpectator.GameInterop;
 /// <summary>
 /// Reads confirmed Lethal Company spectator state through direct game member access.
 /// </summary>
-public sealed class LethalCompanySpectatorAdapter : IGameSpectatorAdapter
+public sealed class LethalCompanySpectatorAdapter :
+    IGameSpectatorAdapter,
+    IGameShipMotionStateAdapter,
+    IGameSpectatedTargetMotionReferenceAdapter
 {
     /// <inheritdoc />
     public SpectatorState ReadSpectatorState()
@@ -222,7 +226,8 @@ public sealed class LethalCompanySpectatorAdapter : IGameSpectatorAdapter
             }
 
             foundActualClientEntry = true;
-            if (PlayerDisplayNameRules.TryNormalize(player.playerUsername, out displayName))
+            TryGetRadarDisplayName(round, player, out string radarDisplayName);
+            if (PlayerDisplayNameRules.TryResolve(player.playerUsername, radarDisplayName, out displayName))
             {
                 return true;
             }
@@ -242,8 +247,9 @@ public sealed class LethalCompanySpectatorAdapter : IGameSpectatorAdapter
                 continue;
             }
 
+            TryGetRadarDisplayName(round, player, out string radarDisplayName);
             if (player.playerClientId == slotId
-                && PlayerDisplayNameRules.TryNormalize(player.playerUsername, out displayName))
+                && PlayerDisplayNameRules.TryResolve(player.playerUsername, radarDisplayName, out displayName))
             {
                 return true;
             }
@@ -251,6 +257,35 @@ public sealed class LethalCompanySpectatorAdapter : IGameSpectatorAdapter
 
         displayName = string.Empty;
         return false;
+    }
+
+    private static bool TryGetRadarDisplayName(
+        StartOfRound round,
+        PlayerControllerB player,
+        out string displayName)
+    {
+        displayName = string.Empty;
+        if (round.mapScreen == null
+            || round.mapScreen.radarTargets == null
+            || player.playerClientId > int.MaxValue)
+        {
+            return false;
+        }
+
+        int slotIndex = (int)player.playerClientId;
+        if (slotIndex < 0 || slotIndex >= round.mapScreen.radarTargets.Count)
+        {
+            return false;
+        }
+
+        TransformAndName radarTarget = round.mapScreen.radarTargets[slotIndex];
+        if (radarTarget == null || string.IsNullOrWhiteSpace(radarTarget.name))
+        {
+            return false;
+        }
+
+        displayName = radarTarget.name;
+        return true;
     }
 
     /// <inheritdoc />
@@ -341,6 +376,97 @@ public sealed class LethalCompanySpectatorAdapter : IGameSpectatorAdapter
             ? localPlayer.transform.position + Vector3.up
             : Vector3.zero;
         return localPlayer.transform != null;
+    }
+
+    /// <inheritdoc />
+    public bool IsWorldPositionInsideShip(Vector3 position)
+    {
+        StartOfRound round = StartOfRound.Instance;
+        return round != null
+            && round.shipBounds != null
+            && round.shipBounds.bounds.Contains(position);
+    }
+
+    /// <inheritdoc />
+    public bool IsShipLeaving()
+    {
+        StartOfRound round = StartOfRound.Instance;
+        return round != null && round.shipIsLeaving;
+    }
+
+    /// <inheritdoc />
+    public bool TryGetShipMotionReference(out SpectatorMotionReferencePose referencePose)
+    {
+        StartOfRound round = StartOfRound.Instance;
+        Transform reference = round != null ? round.elevatorTransform : null!;
+        if (reference == null)
+        {
+            referencePose = default;
+            return false;
+        }
+
+        referencePose = new SpectatorMotionReferencePose(reference.position, reference.rotation);
+        return true;
+    }
+
+    /// <inheritdoc />
+    public bool TryGetSpectatedTargetMotionReference(
+        ulong? targetClientId,
+        ulong? targetPlayerSlotId,
+        out SpectatorMotionReferencePose referencePose)
+    {
+        StartOfRound round = StartOfRound.Instance;
+        if (round == null || round.allPlayerScripts == null)
+        {
+            referencePose = default;
+            return false;
+        }
+
+        PlayerControllerB? player = ResolvePlayer(
+            round.allPlayerScripts,
+            targetClientId,
+            targetPlayerSlotId);
+        Transform? reference = player != null ? player.transform : null;
+        if (reference == null)
+        {
+            referencePose = default;
+            return false;
+        }
+
+        referencePose = new SpectatorMotionReferencePose(reference.position, reference.rotation);
+        return true;
+    }
+
+    private static PlayerControllerB? ResolvePlayer(
+        PlayerControllerB[] players,
+        ulong? targetClientId,
+        ulong? targetPlayerSlotId)
+    {
+        if (targetClientId.HasValue)
+        {
+            for (int index = 0; index < players.Length; index++)
+            {
+                PlayerControllerB player = players[index];
+                if (player != null && player.actualClientId == targetClientId.Value)
+                {
+                    return player;
+                }
+            }
+        }
+
+        if (targetPlayerSlotId.HasValue)
+        {
+            for (int index = 0; index < players.Length; index++)
+            {
+                PlayerControllerB player = players[index];
+                if (player != null && player.playerClientId == targetPlayerSlotId.Value)
+                {
+                    return player;
+                }
+            }
+        }
+
+        return null;
     }
 
     private static Transform? ResolveAnchor(PlayerControllerB player)

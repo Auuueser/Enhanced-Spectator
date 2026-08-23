@@ -59,6 +59,7 @@ public sealed class EnhancedSpectatorNetworkService : IEnhancedSpectatorNetworkS
     private float _nextVoiceActivitySyncTime;
     private float _nextTargetSampleTime;
     private float _nextPoseSampleTime;
+    private float _lastPoseSampleTime = -1f;
     private float _nextPoseRefreshTime;
     private float _nextVoiceActivitySampleTime;
     private float _nextVoiceActivityRefreshTime;
@@ -386,6 +387,7 @@ public sealed class EnhancedSpectatorNetworkService : IEnhancedSpectatorNetworkS
             _nextVoiceActivitySyncTime = 0f;
             _nextTargetSampleTime = 0f;
             _nextPoseSampleTime = 0f;
+            _lastPoseSampleTime = -1f;
             _nextPoseRefreshTime = 0f;
             _nextVoiceActivitySampleTime = 0f;
             _nextVoiceActivityRefreshTime = 0f;
@@ -604,6 +606,7 @@ public sealed class EnhancedSpectatorNetworkService : IEnhancedSpectatorNetworkS
         _lastSentIdentityState = null;
         _nextTargetSampleTime = 0f;
         _nextPoseSampleTime = 0f;
+        _lastPoseSampleTime = -1f;
         _nextPoseRefreshTime = 0f;
         _nextVoiceActivitySampleTime = 0f;
     }
@@ -666,6 +669,7 @@ public sealed class EnhancedSpectatorNetworkService : IEnhancedSpectatorNetworkS
             _lastSentPoseState = null;
             _pendingPoseState = null;
             _pendingPoseRefresh = false;
+            _lastPoseSampleTime = -1f;
             return;
         }
 
@@ -677,10 +681,19 @@ public sealed class EnhancedSpectatorNetworkService : IEnhancedSpectatorNetworkS
             return;
         }
 
-        UpdateLocalSpectatorPose();
+        float now = _runtimeState.UnscaledTime;
+        float sampleDeltaTime = _lastPoseSampleTime >= 0f
+            ? now - _lastPoseSampleTime
+            : 0f;
+        bool useBurstRate = UpdateLocalSpectatorPose(sampleDeltaTime);
+        _lastPoseSampleTime = now;
         _nextPoseSampleTime = NetworkSyncSamplingRules.ResolveNextSampleTime(
-            _runtimeState.UnscaledTime,
-            GetPoseSyncInterval());
+            now,
+            RemoteSpectatorPoseNetworkRateRules.ResolveSamplingInterval(GetPoseSyncInterval()));
+        if (useBurstRate)
+        {
+            _nextPoseSyncTime = Mathf.Min(_nextPoseSyncTime, now);
+        }
     }
 
     private void TrySendPendingTargetState()
@@ -738,7 +751,7 @@ public sealed class EnhancedSpectatorNetworkService : IEnhancedSpectatorNetworkS
         Degrade($"spectator target send failed: {reason}");
     }
 
-    private void UpdateLocalSpectatorPose()
+    private bool UpdateLocalSpectatorPose(float sampleDeltaTime)
     {
         if (!_config.EnableSpectatorPoseSync.Value)
         {
@@ -746,7 +759,7 @@ public sealed class EnhancedSpectatorNetworkService : IEnhancedSpectatorNetworkS
             _lastSentPoseState = null;
             _pendingPoseState = null;
             _pendingPoseRefresh = false;
-            return;
+            return false;
         }
 
         if (!_spectatorPoseStateProvider.TryGetCurrentSpectatorPose(out SpectatorPoseState state))
@@ -762,6 +775,11 @@ public sealed class EnhancedSpectatorNetworkService : IEnhancedSpectatorNetworkS
                 _runtimeState.UtcNowTicks);
         }
 
+        bool useBurstRate = RemoteSpectatorPoseNetworkRateRules.ShouldUseBurstRate(
+            _lastObservedPoseState,
+            state,
+            sampleDeltaTime);
+
         if (_lastObservedPoseState != null && _lastObservedPoseState.ApproximatelyEquals(state))
         {
             if (NetworkSyncSamplingRules.ShouldRefreshUnchangedState(
@@ -774,7 +792,7 @@ public sealed class EnhancedSpectatorNetworkService : IEnhancedSpectatorNetworkS
                 _pendingPoseRefresh = true;
             }
 
-            return;
+            return useBurstRate;
         }
 
         _lastObservedPoseState = state;
@@ -794,6 +812,8 @@ public sealed class EnhancedSpectatorNetworkService : IEnhancedSpectatorNetworkS
             ModLog.Debug(
                 $"Observed spectator pose change: spectating={state.IsSpectating}, localClient={state.LocalClientId}, targetClient={FormatNullable(state.TargetClientId)}, position={FormatVector(state.Position)}.");
         }
+
+        return useBurstRate;
     }
 
     private void UpdateLocalVoiceActivityIfDue()
@@ -1926,6 +1946,7 @@ public sealed class EnhancedSpectatorNetworkService : IEnhancedSpectatorNetworkS
         _nextVoiceActivitySyncTime = 0f;
         _nextTargetSampleTime = 0f;
         _nextPoseSampleTime = 0f;
+        _lastPoseSampleTime = -1f;
         _nextPoseRefreshTime = 0f;
         _nextVoiceActivitySampleTime = 0f;
         _nextVoiceActivityRefreshTime = 0f;

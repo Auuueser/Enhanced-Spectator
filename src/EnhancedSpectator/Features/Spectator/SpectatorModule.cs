@@ -1,5 +1,6 @@
 using System;
 using EnhancedSpectator.GameInterop;
+using EnhancedSpectator.Features.SpectatorPresence;
 using EnhancedSpectator.Logging;
 using EnhancedSpectator.Networking;
 using EnhancedSpectator.Runtime;
@@ -24,6 +25,7 @@ public sealed class SpectatorModule :
     private readonly SpectatorSnapshotCache _snapshotCache;
     private readonly SpectatorFreecamController _freecamController;
     private bool _initialized;
+    private bool _lastPoseHadShipMotionReference;
 
     /// <summary>
     /// Creates a spectator module with a game adapter and freecam settings.
@@ -46,6 +48,11 @@ public sealed class SpectatorModule :
 
     /// <inheritdoc />
     public SpectatorState Current { get; private set; }
+
+    /// <summary>
+    /// Gets the current local enhanced spectator camera and representation state.
+    /// </summary>
+    public SpectatorCameraState CameraState => _freecamController.State;
 
     /// <inheritdoc />
     public void Initialize()
@@ -134,7 +141,7 @@ public sealed class SpectatorModule :
             if (hasPose && useFreecamPose)
             {
                 position = _freecamController.State.WorldPosition;
-                rotation = _freecamController.State.Rotation;
+                rotation = _freecamController.State.RepresentationRotation;
             }
             else if (hasPose && snapshot.SpectateCamera != null)
             {
@@ -142,6 +149,41 @@ public sealed class SpectatorModule :
                 position = cameraTransform.position;
                 rotation = cameraTransform.rotation;
             }
+
+            bool isInsideShipBounds = hasPose
+                && _gameSpectatorAdapter.IsWorldPositionInsideShip(position);
+            bool shipIsLeaving = _gameSpectatorAdapter is IGameShipMotionStateAdapter shipMotionState
+                && shipMotionState.IsShipLeaving();
+            bool shouldCaptureShipReference = hasPose
+                && ShipMotionReferenceCaptureRules.ShouldCapture(
+                    isInsideShipBounds,
+                    shipIsLeaving,
+                    _lastPoseHadShipMotionReference);
+            SpectatorMotionReferencePose motionReference = default;
+            bool hasMotionReference = shouldCaptureShipReference
+                && _gameSpectatorAdapter.TryGetShipMotionReference(out motionReference);
+            _lastPoseHadShipMotionReference = hasMotionReference;
+            Vector3 motionReferenceLocalPosition = hasMotionReference
+                ? RemoteSpectatorMotionCompensationRules.CaptureLocalPosition(position, motionReference)
+                : Vector3.zero;
+            Quaternion motionReferenceLocalRotation = hasMotionReference
+                ? RemoteSpectatorMotionCompensationRules.CaptureLocalRotation(rotation, motionReference)
+                : Quaternion.identity;
+            SpectatorMotionReferencePose targetMotionReference = default;
+            bool hasTargetMotionReference = SpectatorPoseSourceRules.ShouldCaptureTargetMotionReference(
+                    hasPose,
+                    snapshot.HasSpectatedTarget)
+                && _gameSpectatorAdapter is IGameSpectatedTargetMotionReferenceAdapter targetMotionReferenceAdapter
+                && targetMotionReferenceAdapter.TryGetSpectatedTargetMotionReference(
+                    snapshot.SpectatedPlayerActualClientId,
+                    snapshot.SpectatedPlayerSlotId,
+                    out targetMotionReference);
+            Vector3 targetMotionReferenceLocalPosition = hasTargetMotionReference
+                ? RemoteSpectatorMotionCompensationRules.CaptureLocalPosition(position, targetMotionReference)
+                : Vector3.zero;
+            Quaternion targetMotionReferenceLocalRotation = hasTargetMotionReference
+                ? RemoteSpectatorMotionCompensationRules.CaptureLocalRotation(rotation, targetMotionReference)
+                : Quaternion.identity;
 
             state = new SpectatorPoseState(
                 hasPose,
@@ -151,7 +193,13 @@ public sealed class SpectatorModule :
                 hasPose ? snapshot.SpectatedPlayerSlotId : null,
                 position,
                 rotation,
-                DateTime.UtcNow.Ticks);
+                DateTime.UtcNow.Ticks,
+                hasMotionReference,
+                motionReferenceLocalPosition,
+                motionReferenceLocalRotation,
+                hasTargetMotionReference,
+                targetMotionReferenceLocalPosition,
+                targetMotionReferenceLocalRotation);
             return true;
         }
 
@@ -222,6 +270,7 @@ public sealed class SpectatorModule :
         _initialized = false;
         SpectatorLifecycleEvents.Changed -= OnSpectatorLifecycleChanged;
         Current = SpectatorState.Unavailable;
+        _lastPoseHadShipMotionReference = false;
         _snapshotCache.Clear();
         ModLog.Debug("Spectator freecam module disposed.");
     }
@@ -229,6 +278,7 @@ public sealed class SpectatorModule :
     private void OnSpectatorLifecycleChanged(SpectatorLifecycleEventKind kind)
     {
         _snapshotCache.Clear();
+        _lastPoseHadShipMotionReference = false;
         _freecamController.NotifyLifecycleEvent(kind);
     }
 }

@@ -60,14 +60,19 @@ public sealed class NameTagVisual : IDisposable
     /// <summary>
     /// Updates the tag's world position and camera-facing rotation.
     /// </summary>
-    public void ApplyPose(Vector3 markerPosition, Quaternion fallbackRotation, Camera? camera)
+    public void ApplyPose(
+        Vector3 markerPosition,
+        Quaternion fallbackRotation,
+        Camera? camera,
+        float minimumHeightOffset = 0f)
     {
         if (_disposed || _gameObject == null)
         {
             return;
         }
 
-        Vector3 position = markerPosition + (Vector3.up * _heightOffset);
+        float resolvedHeightOffset = Mathf.Max(_heightOffset, minimumHeightOffset);
+        Vector3 position = markerPosition + (Vector3.up * resolvedHeightOffset);
         bool visible = true;
         Quaternion rotation = fallbackRotation;
         if (camera != null)

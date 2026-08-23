@@ -16,6 +16,7 @@ public sealed class SpectatorInputService
     private readonly SpectatorInputKeyCache _toggleFreecamKey = new SpectatorInputKeyCache();
     private readonly SpectatorInputKeyCache _recenterKey = new SpectatorInputKeyCache();
     private readonly SpectatorInputKeyCache _resetToVanillaViewKey = new SpectatorInputKeyCache();
+    private readonly SpectatorInputKeyCache _toggleThirdPersonKey = new SpectatorInputKeyCache();
     private readonly SpectatorInputKeyCache _fastMoveKey = new SpectatorInputKeyCache();
     private readonly SpectatorInputKeyCache _slowMoveKey = new SpectatorInputKeyCache();
     private readonly SpectatorInputKeyCache _ascendKey = new SpectatorInputKeyCache();
@@ -43,6 +44,12 @@ public sealed class SpectatorInputService
     /// Gets whether the reset-to-vanilla key was pressed this frame.
     /// </summary>
     public bool ResetToVanillaPressed => GetConfiguredKeyDown(_resetToVanillaViewKey, _settings.ResetToVanillaViewKey);
+
+    /// <summary>
+    /// Gets whether the self-ghost third-person toggle key was pressed this frame.
+    /// </summary>
+    public bool ToggleThirdPersonPressed =>
+        GetConfiguredKeyDown(_toggleThirdPersonKey, _settings.ToggleThirdPersonKey);
 
     /// <summary>
     /// Gets whether the fast movement key is currently held.
@@ -120,6 +127,13 @@ public sealed class SpectatorInputService
     {
         Mouse? mouse = Mouse.current;
         return mouse == null ? Vector2.zero : mouse.delta.ReadValue() * MouseDeltaScale;
+    }
+
+    /// <summary>Reads the current mouse-wheel delta.</summary>
+    public float ReadScrollDelta()
+    {
+        Mouse? mouse = Mouse.current;
+        return mouse == null ? 0f : mouse.scroll.ReadValue().y / 120f;
     }
 
     /// <summary>

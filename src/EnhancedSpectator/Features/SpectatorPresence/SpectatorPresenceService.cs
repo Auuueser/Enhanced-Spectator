@@ -130,6 +130,11 @@ public sealed class SpectatorPresenceService : ISpectatorPresenceProvider
 
         foreach (SpectatorTargetState remoteTarget in remoteTargets)
         {
+            if (!RemoteSpectatorVisibilityRules.IsRemoteSpectator(remoteTarget, localClientId))
+            {
+                continue;
+            }
+
             bool isWatchingLocalPlayer = RemoteSpectatorVisibilityRules.IsWatchingLocalPlayer(
                 remoteTarget,
                 localClientId,

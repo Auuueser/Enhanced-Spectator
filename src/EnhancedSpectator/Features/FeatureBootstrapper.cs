@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using EnhancedSpectator.Features.FloatingHead;
+using EnhancedSpectator.Features.FearMode;
 using EnhancedSpectator.Config;
 using EnhancedSpectator.Features.ModelInspection;
 using EnhancedSpectator.Features.PlayerStateSync;
@@ -36,10 +37,26 @@ public sealed class FeatureBootstrapper : IDisposable
             IGameSpectatorAdapter gameSpectatorAdapter = new LethalCompanySpectatorAdapter();
             SpectatorFreecamSettings freecamSettings = new SpectatorFreecamSettings(config);
             SpectatorModule spectatorModule = new SpectatorModule(gameSpectatorAdapter, freecamSettings);
+            FearVisualOverrideRegistry fearVisualOverrides = new FearVisualOverrideRegistry();
+            RemoteSpectatorPosePresentationService posePresentationService =
+                new RemoteSpectatorPosePresentationService(gameSpectatorAdapter);
             _features.Add(spectatorModule);
             _runtimeDispatchLists.AddTickable(spectatorModule);
             _runtimeDispatchLists.AddLateTickable(spectatorModule);
             _runtimeDispatchLists.AddCameraPreCullTickable(spectatorModule);
+
+            LocalSpectatorAvatarModule? localAvatarModule = null;
+            if (config.EnableThirdPerson.Value)
+            {
+                localAvatarModule = new LocalSpectatorAvatarModule(
+                    new LocalSpectatorAvatarVisualService(
+                        config,
+                        spectatorModule,
+                        gameSpectatorAdapter,
+                        new PlaceholderHeadVisualFactory(),
+                        fearVisualOverrides,
+                        new LethalCompanyDetachedHeadVisualSourceAdapter()));
+            }
 
             SpectatorDisconnectTargetSwitchService disconnectTargetSwitchService =
                 new SpectatorDisconnectTargetSwitchService(new LethalCompanySpectatorTargetSwitchAdapter());
@@ -75,6 +92,47 @@ public sealed class FeatureBootstrapper : IDisposable
                 _features.Add(presenceModule);
                 _runtimeDispatchLists.AddTickable(presenceModule);
 
+                LethalCompanyFearModeAdapter fearModeAdapter = new LethalCompanyFearModeAdapter();
+                FearModelCatalog fearModelCatalog = new FearModelCatalog(fearModeAdapter);
+                FearModeNetworkService fearModeNetworkService = new FearModeNetworkService(
+                    config,
+                    fearModeAdapter,
+                    fearModelCatalog);
+                FearModeModule fearModeModule = new FearModeModule(fearModeNetworkService);
+                _features.Add(fearModeModule);
+                _runtimeDispatchLists.AddTickable(fearModeModule);
+
+                FearSoundModule fearSoundModule = new FearSoundModule(
+                    config,
+                    fearModeNetworkService,
+                    fearModeAdapter,
+                    spectatorModule,
+                    networkService,
+                    posePresentationService);
+                _features.Add(fearSoundModule);
+                _runtimeDispatchLists.AddTickable(fearSoundModule);
+                _runtimeDispatchLists.AddLateTickable(fearSoundModule);
+
+                SpectatorVoiceMuteState voiceMuteState = new SpectatorVoiceMuteState();
+                FearModelThumbnailService fearThumbnailService = new FearModelThumbnailService(
+                    fearModelCatalog,
+                    fearModeAdapter,
+                    new RuntimeEnemyVisualFactory(),
+                    new LethalCompanyDetachedHeadVisualSourceAdapter());
+                FearModeQuickMenuModule fearQuickMenuModule = new FearModeQuickMenuModule(
+                    config,
+                    fearModeNetworkService,
+                    fearModeAdapter,
+                    new LethalCompanyFearQuickMenuAdapter(fearThumbnailService),
+                    fearSoundModule,
+                    fearThumbnailService,
+                    voiceMuteState);
+                _features.Add(fearQuickMenuModule);
+                _runtimeDispatchLists.AddTickable(fearQuickMenuModule);
+
+                SpectatorVoiceMuteModule voiceMuteModule = new SpectatorVoiceMuteModule(voiceMuteState);
+                _features.Add(voiceMuteModule);
+
                 SpectatorVoiceRoutingModule voiceRoutingModule = new SpectatorVoiceRoutingModule(
                     new SpectatorVoiceRoutingService(
                         config,
@@ -83,9 +141,24 @@ public sealed class FeatureBootstrapper : IDisposable
                             networkService,
                             () => ModLog.IsDebugEnabled
                                 && config.EnableDebugLogging.Value
-                                && config.DebugSpectatorVoiceRouting.Value)));
+                                && config.DebugSpectatorVoiceRouting.Value),
+                        voiceMuteState));
                 _features.Add(voiceRoutingModule);
                 _runtimeDispatchLists.AddLateTickable(voiceRoutingModule);
+
+                FearModeVisualModule fearVisualModule = new FearModeVisualModule(
+                    new FearModeVisualService(
+                        config,
+                        fearModeNetworkService,
+                        fearModelCatalog,
+                        presenceService,
+                        spectatorModule,
+                        fearModeAdapter,
+                        fearVisualOverrides,
+                        new RuntimeEnemyVisualFactory(),
+                        posePresentationService));
+                _features.Add(fearVisualModule);
+                _runtimeDispatchLists.AddLateTickable(fearVisualModule);
 
                 if (config.EnableFloatingHeadVisuals.Value)
                 {
@@ -96,13 +169,21 @@ public sealed class FeatureBootstrapper : IDisposable
                         networkService,
                         new LethalCompanyDetachedHeadVisualSourceAdapter(),
                         new FloatingHeadPlacementService(gameSpectatorAdapter),
-                        new PlaceholderHeadVisualFactory());
+                        new PlaceholderHeadVisualFactory(),
+                        fearVisualOverrides,
+                        posePresentationService);
                     FloatingHeadModule floatingHeadModule = new FloatingHeadModule(visualService);
                     _features.Add(floatingHeadModule);
                     _runtimeDispatchLists.AddLateTickable(floatingHeadModule);
                     _runtimeDispatchLists.AddCameraPreCullTickable(floatingHeadModule);
                     _runtimeDispatchLists.AddGuiTickable(floatingHeadModule);
                 }
+            }
+
+            if (localAvatarModule != null)
+            {
+                _features.Add(localAvatarModule);
+                _runtimeDispatchLists.AddLateTickable(localAvatarModule);
             }
         }
 
