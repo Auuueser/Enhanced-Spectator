@@ -14,4 +14,10 @@ public enum SpectatorCameraMode
     /// Camera follows the local logical ghost/avatar from third person.
     /// </summary>
     ThirdPerson,
+
+    /// <summary>Follow the currently watched living player's eyes.</summary>
+    FirstPerson,
+
+    /// <summary>Continuously orbit the watched living player.</summary>
+    Cinematic,
 }

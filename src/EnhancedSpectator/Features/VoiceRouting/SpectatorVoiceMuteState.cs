@@ -1,3 +1,5 @@
+using BepInEx.Configuration;
+
 namespace EnhancedSpectator.Features.VoiceRouting;
 
 /// <summary>
@@ -5,15 +7,20 @@ namespace EnhancedSpectator.Features.VoiceRouting;
 /// </summary>
 public sealed class SpectatorVoiceMuteState : ISpectatorVoiceMuteState
 {
+    private readonly ConfigEntry<bool>? _preference;
+    private bool _muted;
+    /// <summary>Creates local state with an optional persisted preference.</summary>
+    public SpectatorVoiceMuteState(ConfigEntry<bool>? preference = null) => _preference = preference;
     /// <inheritdoc />
-    public bool IsMuted { get; private set; }
+    public bool IsMuted => _preference?.Value ?? _muted;
 
     /// <summary>
     /// Toggles the local mute state and returns the new value.
     /// </summary>
     public bool Toggle()
     {
-        IsMuted = !IsMuted;
+        _muted = !IsMuted;
+        if (_preference != null) _preference.Value = _muted;
         return IsMuted;
     }
 
@@ -22,7 +29,7 @@ public sealed class SpectatorVoiceMuteState : ISpectatorVoiceMuteState
     /// </summary>
     public void Reset()
     {
-        IsMuted = false;
+        _muted = false;
     }
 }
 

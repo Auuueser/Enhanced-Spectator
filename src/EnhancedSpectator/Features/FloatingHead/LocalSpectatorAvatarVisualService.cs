@@ -42,6 +42,13 @@ public sealed class LocalSpectatorAvatarVisualService : IDisposable
         _visualFactory = visualFactory ?? throw new ArgumentNullException(nameof(visualFactory));
         _fearVisualOverrides = fearVisualOverrides;
         _detachedHeadVisualSourceAdapter = detachedHeadVisualSourceAdapter;
+        _config.Camera.FadeModelsNearby.SettingChanged += OnFadePreferenceChanged;
+        _config.Camera.FadeModelsWhileSpectating.SettingChanged += OnFadePreferenceChanged;
+    }
+
+    private void OnFadePreferenceChanged(object sender, EventArgs args)
+    {
+        if (!LethalCompanyFearViewCamera.ShouldFade(_config.Camera) && _visual != null) _visual.FadeNearby = false;
     }
 
     /// <summary>
@@ -101,7 +108,10 @@ public sealed class LocalSpectatorAvatarVisualService : IDisposable
             _visual!.ApplyPose(
                 state.WorldPosition,
                 rotation,
-                Math.Max(0.01f, scale));
+                Math.Max(0.01f, scale * (_fearVisualOverrides?.GetOwnerScale(clientId) ?? 1f)));
+            _visual.FadeNearby = LethalCompanyFearViewCamera.ShouldFade(_config.Camera);
+            _visual.PrepareCameraFade();
+            _visual.SetWatchedTarget(state.TargetActualClientId, state.TargetSlotId);
         }
         catch (Exception ex)
         {
@@ -121,6 +131,8 @@ public sealed class LocalSpectatorAvatarVisualService : IDisposable
 
         ClearVisual();
         _visualFactory.Dispose();
+        _config.Camera.FadeModelsNearby.SettingChanged -= OnFadePreferenceChanged;
+        _config.Camera.FadeModelsWhileSpectating.SettingChanged -= OnFadePreferenceChanged;
         _disposed = true;
     }
 

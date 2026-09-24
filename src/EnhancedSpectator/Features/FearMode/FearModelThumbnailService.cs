@@ -11,10 +11,15 @@ namespace EnhancedSpectator.Features.FearMode;
 /// <summary>
 /// Renders loaded game monster data into local card thumbnails through the existing renderer-only clone boundary.
 /// </summary>
-public sealed class FearModelThumbnailService : IFearModelThumbnailProvider
+public sealed partial class FearModelThumbnailService : IFearModelThumbnailProvider
 {
     private const int ThumbnailLayer = 31;
     private const int ThumbnailSize = 256;
+    private const int MaxCachedThumbnails = 160; // Bounded full original catalog (~40 MiB RGBA).
+    private int _prewarmIndex;
+    private readonly Dictionary<string, int> _retryAfter = new Dictionary<string, int>(StringComparer.Ordinal);
+    private readonly LinkedList<string> _lru = new LinkedList<string>();
+    private readonly Dictionary<string, LinkedListNode<string>> _lruNodes = new Dictionary<string, LinkedListNode<string>>(StringComparer.Ordinal);
     private readonly FearModelCatalog _catalog;
     private readonly IGameFearModeAdapter _gameAdapter;
     private readonly RuntimeEnemyVisualFactory _visualFactory;
@@ -27,6 +32,7 @@ public sealed class FearModelThumbnailService : IFearModelThumbnailProvider
     private GameObject? _cameraObject;
     private Camera? _camera;
     private HDAdditionalCameraData? _hdCameraData;
+    private readonly List<Light> _studioLights = new List<Light>();
     private Sprite? _fallbackSprite;
     private Texture2D? _fallbackTexture;
     private bool _disposed;
@@ -51,7 +57,11 @@ public sealed class FearModelThumbnailService : IFearModelThumbnailProvider
     /// <inheritdoc />
     public void Request(string modelKey)
     {
+        if (string.IsNullOrWhiteSpace(modelKey)) return;
+        if (_retryAfter.TryGetValue(modelKey, out int retry) && Time.frameCount < retry) return;
+        if (_lruNodes.TryGetValue(modelKey, out var recent)) { _lru.Remove(recent); _lru.AddLast(recent); }
         if (_disposed
+            || _queue.Count >= 18
             || string.IsNullOrWhiteSpace(modelKey)
             || _sprites.ContainsKey(modelKey)
             || !_queued.Add(modelKey))
@@ -87,6 +97,12 @@ public sealed class FearModelThumbnailService : IFearModelThumbnailProvider
     /// <inheritdoc />
     public void Tick()
     {
+        if (!FearVisualWorkSchedule.Shared.TryThumbnail(Time.frameCount)) return;
+        if (!_disposed && _catalog.ModelKeys.Count > 1)
+        {
+            _prewarmIndex %= _catalog.ModelKeys.Count;
+            Request(_catalog.ModelKeys[_prewarmIndex++]);
+        }
         if (_disposed || _queue.Count == 0)
         {
             return;
@@ -94,6 +110,7 @@ public sealed class FearModelThumbnailService : IFearModelThumbnailProvider
 
         string modelKey = _queue.Dequeue();
         _queued.Remove(modelKey);
+        _retryAfter[modelKey] = Time.frameCount + 300;
         TryRender(modelKey);
     }
 
@@ -121,6 +138,9 @@ public sealed class FearModelThumbnailService : IFearModelThumbnailProvider
         }
 
         _sprites.Clear();
+        _retryAfter.Clear();
+        _lru.Clear();
+        _lruNodes.Clear();
         _queue.Clear();
         _queued.Clear();
         if (_fallbackSprite != null) UnityEngine.Object.Destroy(_fallbackSprite);
@@ -165,6 +185,7 @@ public sealed class FearModelThumbnailService : IFearModelThumbnailProvider
             Quaternion rotation = FearThumbnailPoseRules.ResolveCardRotation(
                 FearModelPresentationRules.ResolveWorldRotation(Quaternion.identity, modelKey),
                 modelKey);
+            if (_auditPoseOverride.HasValue) rotation = Quaternion.Euler(_auditPoseOverride.Value);
             visual.ApplyPose(isolatedPosition, rotation);
             if (!visual.TryGetWorldBounds(out Bounds bounds))
             {
@@ -173,6 +194,7 @@ public sealed class FearModelThumbnailService : IFearModelThumbnailProvider
             }
 
             ConfigureRig(bounds, FearThumbnailPoseRules.ResolveOrthographicScale(modelKey));
+            ConfigureStudioLights(bounds, FearItemPoseRules.UseStudioLighting(modelKey));
             target = new RenderTexture(
                 ThumbnailSize,
                 ThumbnailSize,
@@ -196,7 +218,20 @@ public sealed class FearModelThumbnailService : IFearModelThumbnailProvider
                 new Vector2(0.5f, 0.5f),
                 ThumbnailSize);
             sprite.name = $"Enhanced Spectator Fear Card {modelKey}";
+            if (_sprites.TryGetValue(modelKey, out var replaced) && replaced != null)
+            { UnityEngine.Object.Destroy(replaced.texture); UnityEngine.Object.Destroy(replaced); _sprites.Remove(modelKey); }
+            if (_lruNodes.TryGetValue(modelKey, out var replacedNode)) { _lru.Remove(replacedNode); _lruNodes.Remove(modelKey); }
+            while (_sprites.Count >= MaxCachedThumbnails && _lru.First != null)
+            {
+                string oldest = _lru.First.Value;
+                _lru.RemoveFirst(); _lruNodes.Remove(oldest);
+                if (_sprites.TryGetValue(oldest, out var oldSprite) && oldSprite != null)
+                { UnityEngine.Object.Destroy(oldSprite.texture); UnityEngine.Object.Destroy(oldSprite); }
+                _sprites.Remove(oldest);
+            }
+            _retryAfter.Remove(modelKey);
             _sprites[modelKey] = sprite;
+            _lruNodes[modelKey] = _lru.AddLast(modelKey);
             Revision++;
             ModLog.Debug($"Fear card thumbnail rendered from safe model data: model={modelKey}.");
         }
@@ -206,6 +241,7 @@ public sealed class FearModelThumbnailService : IFearModelThumbnailProvider
         }
         finally
         {
+            foreach (var light in _studioLights) if (light != null) light.gameObject.SetActive(false);
             if (_camera != null)
             {
                 _camera.targetTexture = null;
@@ -355,6 +391,32 @@ public sealed class FearModelThumbnailService : IFearModelThumbnailProvider
         _camera.transform.LookAt(bounds.center + (Vector3.up * bounds.extents.y * 0.05f));
         _camera.nearClipPlane = 0.01f;
         _camera.farClipPlane = Mathf.Max(20f, largestExtent * 12f);
+    }
+
+    private void ConfigureStudioLights(Bounds bounds, bool enabled)
+    {
+        if (!enabled) return;
+        while (_studioLights.Count < 2)
+        {
+            var go = new GameObject("Enhanced Spectator Card Light");
+            go.transform.SetParent(_cameraObject!.transform, false);
+            var light = go.AddComponent<Light>();
+            light.type = LightType.Point;
+            light.shadows = LightShadows.None;
+            light.cullingMask = 1 << ThumbnailLayer;
+            go.AddComponent<HDAdditionalLightData>();
+            _studioLights.Add(light);
+        }
+        float distance = Mathf.Max(2f, bounds.extents.magnitude * 3f);
+        for (int i = 0; i < _studioLights.Count; i++)
+        {
+            var light = _studioLights[i];
+            light.gameObject.SetActive(true);
+            light.transform.position = bounds.center + (i == 0 ? new Vector3(-0.8f, 1f, 1f) : new Vector3(1f, 0.1f, 0.7f)).normalized * distance;
+            var hd = light.GetComponent<HDAdditionalLightData>();
+            hd.SetRange(distance * 3f);
+            hd.SetIntensity((i == 0 ? 5f : 2.5f) * distance * distance, LightUnit.Candela);
+        }
     }
 
     private Color[] CapturePixels(RenderTexture target, Color background)

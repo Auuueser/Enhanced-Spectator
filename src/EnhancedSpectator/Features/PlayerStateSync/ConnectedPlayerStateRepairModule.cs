@@ -61,7 +61,7 @@ public sealed class ConnectedPlayerStateRepairModule : IFeatureModule, IRuntimeT
             return;
         }
 
-        if (!_config.RepairVanillaConnectedPlayerState.Value)
+        if (!_config.EnableNetworking.Value || !_config.RepairVanillaConnectedPlayerState.Value)
         {
             ResetSchedule();
             return;

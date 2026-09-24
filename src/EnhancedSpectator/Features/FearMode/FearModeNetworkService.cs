@@ -8,6 +8,7 @@ using EnhancedSpectator.Runtime;
 using Unity.Collections;
 using Unity.Netcode;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 namespace EnhancedSpectator.Features.FearMode;
 
@@ -24,6 +25,13 @@ public sealed class FearModeNetworkService : IFearModeStateProvider, IDisposable
     private readonly FearModelCatalog _catalog;
     private readonly FearModeSelectionRegistry _selections = new FearModeSelectionRegistry();
     private readonly HashSet<ulong> _capablePeers = new HashSet<ulong>();
+    private bool _hostSupportsExpandedCatalog;
+    private bool _hostSupportsSharedScale;
+    private float _lastSubmittedScale = float.NaN;
+    private float _nextScaleSubmitTime;
+    private int _hostItemSoundRevision = 1;
+    private readonly Dictionary<ulong, int> _itemSoundRevisions = new Dictionary<ulong, int>();
+    private readonly HashSet<ulong> _expandedCatalogPeers = new HashSet<ulong>();
     private readonly HashSet<ulong> _soundCapablePeers = new HashSet<ulong>();
     private readonly List<FearModeSelectionState> _selectionScratch = new List<FearModeSelectionState>();
     private readonly List<AudioClip> _soundClipScratch = new List<AudioClip>();
@@ -44,6 +52,7 @@ public sealed class FearModeNetworkService : IFearModeStateProvider, IDisposable
     private long _localSoundRequestSequence;
     private long _hostSoundSequence;
     private long _lastReceivedSoundSequence;
+    private int _soundDropReports = 16;
 
     /// <summary>Creates the fear-mode network service.</summary>
     public FearModeNetworkService(
@@ -54,10 +63,27 @@ public sealed class FearModeNetworkService : IFearModeStateProvider, IDisposable
         _config = config ?? throw new ArgumentNullException(nameof(config));
         _gameAdapter = gameAdapter ?? throw new ArgumentNullException(nameof(gameAdapter));
         _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
+        SceneManager.sceneLoaded += OnSceneLoaded;
     }
+
+    private void OnSceneLoaded(Scene scene, LoadSceneMode mode) => _nextCatalogRefreshFrame = 0;
 
     /// <inheritdoc />
     public bool IsSessionEnabled => _sessionEnabled;
+
+    /// <summary>Whether a compatible host has sent its session gate.</summary>
+    public bool HasCompatibleHost => IsHost || _hasReceivedSession;
+    /// <summary>Whether the host accepts the expanded original-prop catalog.</summary>
+    public bool SupportsExpandedCatalog => IsHost || _hostSupportsExpandedCatalog;
+    /// <summary>Whether this host relays owner-selected model size.</summary>
+    public bool SupportsSharedScale => IsHost || _hostSupportsSharedScale;
+    /// <summary>Whether this model is selectable with the negotiated host catalog.</summary>
+    public bool CanSelectCatalogKey(string key) => _catalog.IsAllowed(key)
+        && FearModelIdentityRules.CanPlayForPeer(key, SupportsExpandedCatalog)
+        && (key != FearModelIdentityRules.Dropship || _catalog.TryGetVisualSource(key, out _));
+
+    /// <summary>Whether local item clip indices match the host's declared catalog.</summary>
+    public bool CanUseModelSound(string key) => IsHost || FearItemSoundCompatibility.CanExchange(key, _hostItemSoundRevision);
 
     /// <summary>Gets the current model catalog.</summary>
     public FearModelCatalog Catalog => _catalog;
@@ -74,6 +100,13 @@ public sealed class FearModeNetworkService : IFearModeStateProvider, IDisposable
     /// <summary>Gets whether the local transport is currently the host.</summary>
     public bool IsHost => _networkManager != null && _networkManager.IsHost;
 
+    /// <summary>Reannounces client sound capability when reception is enabled, without changing host authority.</summary>
+    public void RefreshSoundReception()
+    {
+        if (_registered && _networkManager != null && !_networkManager.IsHost && _messagingManager != null)
+            SendCapabilityToHost();
+    }
+
     /// <summary>Advances registration, capability, session, and cleanup state.</summary>
     public void Tick()
     {
@@ -82,7 +115,7 @@ public sealed class FearModeNetworkService : IFearModeStateProvider, IDisposable
             return;
         }
 
-        if (!RuntimeConnectionState.CanUseModNetworking(out _))
+        if (!_config.EnableNetworking.Value || !RuntimeConnectionState.CanUseModNetworking(out _))
         {
             Unregister(clearState: true);
             return;
@@ -120,6 +153,14 @@ public sealed class FearModeNetworkService : IFearModeStateProvider, IDisposable
         }
 
         EnsureLocalDefaultSelection();
+        if (_sessionEnabled && SupportsSharedScale && Time.unscaledTime >= _nextScaleSubmitTime
+            && _lastSubmittedScale != _config.Camera.SharedModelScale.Value
+            && _gameAdapter.TryGetLocalDeadPlayerIdentity(out ulong scaleClientId, out _)
+            && _selections.TryGet(scaleClientId, out var scaleSelection))
+        {
+            _nextScaleSubmitTime = Time.unscaledTime + 0.2f;
+            TrySelectLocalModel(scaleSelection.ModelKey, out _);
+        }
     }
 
     /// <summary>Attempts to submit a model selection for the local dead player.</summary>
@@ -144,7 +185,7 @@ public sealed class FearModeNetworkService : IFearModeStateProvider, IDisposable
             return false;
         }
 
-        if (!_catalog.IsAllowed(modelKey))
+        if (!CanSelectCatalogKey(modelKey))
         {
             reason = "model key is not in the current safe catalog";
             return false;
@@ -162,7 +203,8 @@ public sealed class FearModeNetworkService : IFearModeStateProvider, IDisposable
             clientId,
             slotId,
             modelKey,
-            _localSelectionRevision);
+            _localSelectionRevision,
+            SupportsSharedScale ? _config.Camera.SharedModelScale.Value : 1f);
 
         if (_networkManager.IsHost)
         {
@@ -176,10 +218,13 @@ public sealed class FearModeNetworkService : IFearModeStateProvider, IDisposable
             }
 
             BroadcastSelection(accepted);
+            _lastSubmittedScale = _config.Camera.SharedModelScale.Value;
             return true;
         }
 
-        return SendSelection(NetworkManager.ServerClientId, state, out reason);
+        bool sent = SendSelection(NetworkManager.ServerClientId, state, out reason);
+        if (sent) _lastSubmittedScale = _config.Camera.SharedModelScale.Value;
+        return sent;
     }
 
     /// <inheritdoc />
@@ -216,6 +261,8 @@ public sealed class FearModeNetworkService : IFearModeStateProvider, IDisposable
             reason = "local dead-player fear selection unavailable";
             return false;
         }
+
+        if (!CanUseModelSound(selection.ModelKey)) { reason = "host item sound catalog differs"; return false; }
 
         if (action != FearSoundAction.Play && action != FearSoundAction.PlayNext)
         {
@@ -324,7 +371,9 @@ public sealed class FearModeNetworkService : IFearModeStateProvider, IDisposable
         }
 
         _disposed = true;
+        SceneManager.sceneLoaded -= OnSceneLoaded;
         Unregister(clearState: true);
+        (_gameAdapter as IDisposable)?.Dispose();
     }
 
     private bool EnsureRegistered()
@@ -416,6 +465,13 @@ public sealed class FearModeNetworkService : IFearModeStateProvider, IDisposable
         _networkManager = null;
         _messagingManager = null;
         _hasReceivedSession = false;
+        _hostSupportsExpandedCatalog = false;
+        _hostItemSoundRevision = 1;
+        _hostSupportsSharedScale = false;
+        _lastSubmittedScale = float.NaN;
+        _nextScaleSubmitTime = 0f;
+        _itemSoundRevisions.Clear();
+        _expandedCatalogPeers.Clear();
         _capablePeers.Clear();
         _soundCapablePeers.Clear();
         _pendingSoundEvents.Clear();
@@ -494,6 +550,9 @@ public sealed class FearModeNetworkService : IFearModeStateProvider, IDisposable
             return;
         }
 
+        if (FearModeNetworkSerializer.TryReadExpandedCatalog(ref reader)) _expandedCatalogPeers.Add(senderClientId);
+        else _expandedCatalogPeers.Remove(senderClientId);
+        _itemSoundRevisions[senderClientId] = FearModeNetworkSerializer.ReadItemSoundRevision(ref reader);
         _capablePeers.Add(senderClientId);
         SendSession(senderClientId, _sessionEnabled);
         _selections.CopyTo(_selectionScratch);
@@ -519,6 +578,9 @@ public sealed class FearModeNetworkService : IFearModeStateProvider, IDisposable
             return;
         }
 
+        _hostSupportsExpandedCatalog = FearModeNetworkSerializer.TryReadExpandedCatalog(ref reader);
+        _hostItemSoundRevision = FearModeNetworkSerializer.ReadItemSoundRevision(ref reader);
+        _hostSupportsSharedScale = FearModeNetworkSerializer.ReadSharedScaleSupport(ref reader);
         _sessionEnabled = enabled;
         _hasReceivedSession = true;
         if (!enabled)
@@ -613,18 +675,34 @@ public sealed class FearModeNetworkService : IFearModeStateProvider, IDisposable
         FastBufferReader reader = payload;
         if (!FearSoundNetworkSerializer.TryReadEvent(ref reader, out FearSoundEventState state, out string reason))
         {
-            ModLog.Debug($"Dropped fear sound event: {reason}.");
+            ReportSoundDrop(reason);
             return;
         }
 
         if (state.Sequence <= _lastReceivedSoundSequence)
         {
-            ModLog.Debug($"Dropped stale fear sound event sequence {state.Sequence}.");
+            ReportSoundDrop($"stale sequence={state.Sequence}, last={_lastReceivedSoundSequence}");
             return;
         }
 
         _lastReceivedSoundSequence = state.Sequence;
+        if (state.Action != FearSoundAction.Stop && !CanUseModelSound(state.ModelKey))
+        { ReportSoundDrop($"host catalog revision={_hostItemSoundRevision}, model={state.ModelKey}"); return; }
+        if (state.Action != FearSoundAction.Stop && FearItemSoundCompatibility.UsesCatalogFingerprint(state.ModelKey)
+            && !MatchesItemSoundCatalog(state)) { ReportSoundDrop($"catalog fingerprint differs, model={state.ModelKey}"); return; }
         EnqueueSoundEvent(state);
+    }
+
+    private void ReportSoundDrop(string reason)
+    {
+        if (_soundDropReports-- > 0) ModLog.Info("Client fear sound packet not accepted: " + reason + ".");
+    }
+
+    private bool MatchesItemSoundCatalog(FearSoundEventState state)
+    {
+        _soundClipScratch.Clear();
+        _gameAdapter.CopyFearSoundClipsTo(state.ModelKey, _soundClipScratch);
+        return string.Equals(state.CatalogFingerprint, OriginalItemSoundCatalog.Fingerprint(_soundClipScratch), StringComparison.Ordinal);
     }
 
     private bool TryAcceptHostSelection(
@@ -654,7 +732,7 @@ public sealed class FearModeNetworkService : IFearModeStateProvider, IDisposable
             state.ClientId,
             state.PlayerSlotId,
             state.ModelKey,
-            canonicalRevision);
+            canonicalRevision, state.ModelScale);
         if (!_selections.Update(accepted))
         {
             reason = "host could not store canonical selection revision";
@@ -680,6 +758,13 @@ public sealed class FearModeNetworkService : IFearModeStateProvider, IDisposable
     {
         accepted = null!;
         reason = string.Empty;
+        if (request.Action != FearSoundAction.Stop && _networkManager != null
+            && senderClientId != _networkManager.LocalClientId
+            && !FearItemSoundCompatibility.CanExchange(request.ModelKey, _itemSoundRevisions.TryGetValue(senderClientId, out int revision) ? revision : 1))
+        { reason = "peer item sound catalog differs"; return false; }
+        if (request.Action != FearSoundAction.Stop && FearItemSoundCompatibility.UsesCatalogFingerprint(request.ModelKey)
+            && _networkManager != null && senderClientId != _networkManager.LocalClientId && !MatchesItemSoundCatalog(request))
+        { reason = "item sound catalog fingerprint differs"; return false; }
         _soundClipScratch.Clear();
         if (request.Action != FearSoundAction.Stop)
         {
@@ -859,6 +944,10 @@ public sealed class FearModeNetworkService : IFearModeStateProvider, IDisposable
             return false;
         }
 
+        if (IsHost)
+            state = new FearModeSelectionState(state.ClientId, state.PlayerSlotId,
+                FearModelIdentityRules.KeyForPeer(state.ModelKey, _expandedCatalogPeers.Contains(clientId)), state.Revision, state.ModelScale);
+
         FastBufferWriter writer = new FastBufferWriter(
             FearModeNetworkSerializer.SelectionMessageSize,
             Allocator.Temp);
@@ -887,6 +976,8 @@ public sealed class FearModeNetworkService : IFearModeStateProvider, IDisposable
     {
         foreach (ulong clientId in _soundCapablePeers)
         {
+            if (!FearModelIdentityRules.CanPlayForPeer(state.ModelKey, _expandedCatalogPeers.Contains(clientId))) continue;
+            if (state.Action != FearSoundAction.Stop && !FearItemSoundCompatibility.CanExchange(state.ModelKey, _itemSoundRevisions.TryGetValue(clientId, out int revision) ? revision : 1)) continue;
             SendSoundPacket(FearModeNetworkConstants.SoundEventMessageName, clientId, state, out _);
         }
     }
@@ -914,7 +1005,14 @@ public sealed class FearModeNetworkService : IFearModeStateProvider, IDisposable
             Allocator.Temp);
         try
         {
-            FearSoundNetworkSerializer.WriteEvent(ref writer, state);
+            string fingerprint = string.Empty;
+            if (state.Action != FearSoundAction.Stop && FearItemSoundCompatibility.UsesCatalogFingerprint(state.ModelKey))
+            {
+                _soundClipScratch.Clear();
+                _gameAdapter.CopyFearSoundClipsTo(state.ModelKey, _soundClipScratch);
+                fingerprint = OriginalItemSoundCatalog.Fingerprint(_soundClipScratch);
+            }
+            FearSoundNetworkSerializer.WriteEvent(ref writer, state, fingerprint);
             _messagingManager.SendNamedMessage(
                 messageName,
                 clientId,
@@ -935,6 +1033,8 @@ public sealed class FearModeNetworkService : IFearModeStateProvider, IDisposable
 
     private void OnClientDisconnected(ulong clientId)
     {
+        _expandedCatalogPeers.Remove(clientId);
+        _itemSoundRevisions.Remove(clientId);
         _capablePeers.Remove(clientId);
         _soundCapablePeers.Remove(clientId);
         _lastAcceptedSoundTicks.Remove(clientId);

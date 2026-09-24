@@ -7,7 +7,7 @@ namespace EnhancedSpectator.Features.FloatingHead;
 /// <summary>
 /// Runtime-only placeholder visual for one remote spectator.
 /// </summary>
-public sealed class FloatingHeadVisual : IDisposable
+public sealed partial class FloatingHeadVisual : IDisposable
 {
     private readonly GameObject _gameObject;
     private readonly Material? _material;
@@ -69,6 +69,7 @@ public sealed class FloatingHeadVisual : IDisposable
         _baseAlpha = Mathf.Clamp01(baseAlpha);
         _colliderRemoved = colliderRemoved;
         State = new FloatingHeadVisualState(spectatorClientId, spectatorSlotId, false, Vector3.zero);
+        RegisterFade();
     }
 
     /// <summary>
@@ -282,6 +283,7 @@ public sealed class FloatingHeadVisual : IDisposable
         bool motionReferenced,
         SpectatorMotionReferencePose motionReference)
     {
+        RestoreHeadFade();
         if (_disposed || _gameObject == null)
         {
             return;
@@ -519,6 +521,7 @@ public sealed class FloatingHeadVisual : IDisposable
         }
 
         _disposed = true;
+        UnregisterFade();
         if (_gameObject != null)
         {
             UnityEngine.Object.Destroy(_gameObject);

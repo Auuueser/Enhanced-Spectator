@@ -11,8 +11,40 @@ namespace EnhancedSpectator.GameInterop;
 public sealed class LethalCompanySpectatorAdapter :
     IGameSpectatorAdapter,
     IGameShipMotionStateAdapter,
-    IGameSpectatedTargetMotionReferenceAdapter
+    IGameSpectatedTargetMotionReferenceAdapter,
+    IGameSpectatorCameraAdapter
 {
+    /// <inheritdoc />
+    public bool TryGetTargetEyePose(out Vector3 position, out Quaternion rotation)
+    {
+        position = default;
+        rotation = Quaternion.identity;
+        var target = GetLocalPlayer()?.spectatedPlayerScript;
+        if (target == null || target.isPlayerDead || !target.isPlayerControlled || target.gameplayCamera == null) return false;
+        position = target.gameplayCamera.transform.position;
+        rotation = LethalCompanyFirstPersonPose.Rotation(target);
+        return true;
+    }
+
+    /// <inheritdoc />
+    public bool IsCameraInputBlocked()
+    {
+        var local = GetLocalPlayer();
+        if (IsLocalQuickMenuOpen() || (local != null && local.isTypingChat)) return true;
+        var selected = UnityEngine.EventSystems.EventSystem.current?.currentSelectedGameObject;
+        return selected != null && (selected.GetComponent<TMPro.TMP_InputField>() != null
+            || selected.GetComponent<UnityEngine.UI.InputField>() != null);
+    }
+
+    /// <inheritdoc />
+    public float GetSafeCameraDistance(Vector3 origin, Vector3 direction, float distance)
+    {
+        var local = GetLocalPlayer();
+        int mask = local != null ? local.walkableSurfacesNoPlayersMask : Physics.DefaultRaycastLayers;
+        return Physics.SphereCast(origin, 0.2f, direction, out RaycastHit hit, distance, mask, QueryTriggerInteraction.Ignore)
+            ? Mathf.Max(0f, hit.distance - 0.15f) : distance;
+    }
+
     /// <inheritdoc />
     public SpectatorState ReadSpectatorState()
     {

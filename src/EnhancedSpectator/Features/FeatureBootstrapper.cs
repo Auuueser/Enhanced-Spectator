@@ -32,6 +32,9 @@ public sealed class FeatureBootstrapper : IDisposable
     /// </summary>
     public FeatureBootstrapper(EnhancedSpectatorConfig config)
     {
+        var nameRepair = new PlayerNameRepairModule(config.Camera);
+        _features.Add(nameRepair);
+        _runtimeDispatchLists.AddTickable(nameRepair);
         if (config.EnableSpectatorModule.Value)
         {
             IGameSpectatorAdapter gameSpectatorAdapter = new LethalCompanySpectatorAdapter();
@@ -44,6 +47,14 @@ public sealed class FeatureBootstrapper : IDisposable
             _runtimeDispatchLists.AddTickable(spectatorModule);
             _runtimeDispatchLists.AddLateTickable(spectatorModule);
             _runtimeDispatchLists.AddCameraPreCullTickable(spectatorModule);
+
+            var visibility = new SpectatorHudModule(new LethalCompanySpectatorUiVisibility(config));
+            ModLog.Info($"Spectator UI: build=hud-first-person-r4-20260922; keyHints={config.Camera.ShowKeyHints.Value}; hintsKey={config.Camera.ToggleKeyHintsKey.Value}; hudKey={config.Camera.ToggleHudKey.Value}.");
+            _features.Add(visibility);
+            _runtimeDispatchLists.AddLateTickable(visibility);
+            var hudModule = new SpectatorHudModule(new LethalCompanySpectatorHudAdapter());
+            _features.Add(hudModule);
+            _runtimeDispatchLists.AddLateTickable(hudModule);
 
             LocalSpectatorAvatarModule? localAvatarModule = null;
             if (config.EnableThirdPerson.Value)
@@ -63,7 +74,7 @@ public sealed class FeatureBootstrapper : IDisposable
             _features.Add(disconnectTargetSwitchService);
             _runtimeDispatchLists.AddTickable(disconnectTargetSwitchService);
 
-            if (config.EnableNetworking.Value)
+            // Local menu and options must exist even when networking is disabled. Services enforce their own gates.
             {
                 LethalCompanyVoiceActivityProvider voiceActivityProvider = new LethalCompanyVoiceActivityProvider();
                 EnhancedSpectatorNetworkService networkService = new EnhancedSpectatorNetworkService(
@@ -99,8 +110,14 @@ public sealed class FeatureBootstrapper : IDisposable
                     fearModeAdapter,
                     fearModelCatalog);
                 FearModeModule fearModeModule = new FearModeModule(fearModeNetworkService);
+                fearVisualOverrides.BindOwnerScale(id => fearModeNetworkService.IsSessionEnabled
+                    && fearModeNetworkService.TryGetSelection(id, out var selected) ? selected.ModelScale : 1f);
                 _features.Add(fearModeModule);
                 _runtimeDispatchLists.AddTickable(fearModeModule);
+                var hints = new SpectatorHudModule(new LethalCompanySpectatorHintAdapter(config,
+                    () => fearModeNetworkService.IsSessionEnabled));
+                _features.Add(hints);
+                _runtimeDispatchLists.AddLateTickable(hints);
 
                 FearSoundModule fearSoundModule = new FearSoundModule(
                     config,
@@ -113,7 +130,7 @@ public sealed class FeatureBootstrapper : IDisposable
                 _runtimeDispatchLists.AddTickable(fearSoundModule);
                 _runtimeDispatchLists.AddLateTickable(fearSoundModule);
 
-                SpectatorVoiceMuteState voiceMuteState = new SpectatorVoiceMuteState();
+                SpectatorVoiceMuteState voiceMuteState = new SpectatorVoiceMuteState(config.Camera.GhostVoiceMuted);
                 FearModelThumbnailService fearThumbnailService = new FearModelThumbnailService(
                     fearModelCatalog,
                     fearModeAdapter,
@@ -123,7 +140,7 @@ public sealed class FeatureBootstrapper : IDisposable
                     config,
                     fearModeNetworkService,
                     fearModeAdapter,
-                    new LethalCompanyFearQuickMenuAdapter(fearThumbnailService),
+                    new LethalCompanyFearQuickMenuAdapter(fearThumbnailService, new SpectatorOptionsController(config)),
                     fearSoundModule,
                     fearThumbnailService,
                     voiceMuteState);

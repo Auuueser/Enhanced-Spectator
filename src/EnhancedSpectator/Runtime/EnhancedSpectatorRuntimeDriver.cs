@@ -1,5 +1,6 @@
 using System;
 using EnhancedSpectator.Features;
+using EnhancedSpectator.GameInterop;
 using EnhancedSpectator.Logging;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -36,6 +37,8 @@ public sealed class EnhancedSpectatorRuntimeDriver : MonoBehaviour
             SceneManager.sceneLoaded += OnSceneLoaded;
             SceneManager.sceneUnloaded += OnSceneUnloaded;
             Camera.onPreCull += OnCameraPreCull;
+            Camera.onPostRender += OnCameraPostRender;
+            RenderPipelineManager.endCameraRendering += OnEndCameraRendering;
             RenderPipelineManager.beginCameraRendering += OnBeginCameraRendering;
             _sceneHookRegistered = true;
         }
@@ -63,7 +66,9 @@ public sealed class EnhancedSpectatorRuntimeDriver : MonoBehaviour
     /// </summary>
     public static void BeginShutdown()
     {
+        LethalCompanySpectatorUiVisibility.Clear();
         _applicationQuitting = true;
+        LethalCompanyFirstPersonVisibility.Clear();
         RuntimeConnectionState.MarkPluginShuttingDown();
 
         if (_sceneHookRegistered)
@@ -71,6 +76,8 @@ public sealed class EnhancedSpectatorRuntimeDriver : MonoBehaviour
             SceneManager.sceneLoaded -= OnSceneLoaded;
             SceneManager.sceneUnloaded -= OnSceneUnloaded;
             Camera.onPreCull -= OnCameraPreCull;
+            Camera.onPostRender -= OnCameraPostRender;
+            RenderPipelineManager.endCameraRendering -= OnEndCameraRendering;
             RenderPipelineManager.beginCameraRendering -= OnBeginCameraRendering;
             _sceneHookRegistered = false;
         }
@@ -90,6 +97,8 @@ public sealed class EnhancedSpectatorRuntimeDriver : MonoBehaviour
 
     private void Update()
     {
+        LethalCompanySpectatorUiVisibility.RestoreRenderers();
+        LethalCompanyFirstPersonVisibility.Restore();
         _featureBootstrapper?.Tick();
     }
 
@@ -126,17 +135,25 @@ public sealed class EnhancedSpectatorRuntimeDriver : MonoBehaviour
 
     private static void OnSceneLoaded(Scene scene, LoadSceneMode mode)
     {
+        LethalCompanySpectatorUiVisibility.Clear();
         _ = scene;
         _ = mode;
+        LethalCompanyFirstPersonVisibility.Clear();
         RuntimeConnectionState.MarkSceneTransition();
         EnsureInstalled();
     }
 
     private static void OnSceneUnloaded(Scene scene)
     {
+        LethalCompanySpectatorUiVisibility.Clear();
         _ = scene;
+        LethalCompanyFirstPersonVisibility.Clear();
         RuntimeConnectionState.MarkSceneTransition();
     }
+
+    private static void OnCameraPostRender(Camera camera) => LethalCompanyFirstPersonVisibility.Restore();
+
+    private static void OnEndCameraRendering(ScriptableRenderContext context, Camera camera) => LethalCompanyFirstPersonVisibility.Restore();
 
     private static void OnCameraPreCull(Camera camera)
     {
@@ -165,6 +182,7 @@ public sealed class EnhancedSpectatorRuntimeDriver : MonoBehaviour
 
         _lastCameraTickFrame = frame;
         _lastCameraTickInstanceId = cameraId;
+        LethalCompanyFirstPersonVisibility.Restore();
         _featureBootstrapper.CameraPreCullTick(camera);
     }
 }

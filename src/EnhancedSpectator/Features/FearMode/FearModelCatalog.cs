@@ -22,7 +22,7 @@ public sealed class FearModelCatalog
     /// <summary>Gets the current ordered model keys, including Default.</summary>
     public IReadOnlyList<string> ModelKeys => _modelKeys;
 
-    /// <summary>Refreshes keys from currently loaded V81 level enemy definitions.</summary>
+    /// <summary>Refreshes keys from confirmed original visual sources.</summary>
     public void Refresh()
     {
         _adapter.CopyAvailableModelKeysTo(_modelKeys);
@@ -69,7 +69,7 @@ public sealed class FearModelCatalog
             return false;
         }
 
-        return _adapter.TryGetEnemyVisualSource(modelKey, out source) && source != null;
+        return _adapter.TryGetVisualSource(modelKey, out source) && source != null;
     }
 }
 

@@ -1,0 +1,642 @@
+{
+  "chunks": [
+    {
+      "file": "level4",
+      "offset": 2129956,
+      "size": 40,
+      "sha256": "3dbc95573eb7b5109875a5c22ac7e6875ec7c82d084b457c0633f70ec812dd78"
+    },
+    {
+      "file": "sharedassets4.assets.resS",
+      "offset": 24248240,
+      "size": 201376,
+      "sha256": "d5781145ba061c4d0cf0af78e215fdb7d1a7258e181950c181fc78a583d1953d"
+    },
+    {
+      "file": "sharedassets4.assets",
+      "offset": 730524,
+      "size": 30792,
+      "sha256": "22516501d0f85bc84ca08c4ba05333a71037fc9657d7359e1e3bcc7531fba2a7"
+    },
+    {
+      "file": "sharedassets4.assets.resS",
+      "offset": 12016720,
+      "size": 174776,
+      "sha256": "45a2cdd0b2685dd47e45549f0d371a90716f2381b64498087d87ae58c2cf1694"
+    },
+    {
+      "file": "sharedassets4.assets",
+      "offset": 447408,
+      "size": 16,
+      "sha256": "558bcb015613fe18b324efeb68c090c78f913fda8cf776e199847a4ae85f6186"
+    },
+    {
+      "file": "sharedassets1.assets.resS",
+      "offset": 28413664,
+      "size": 349552,
+      "sha256": "972823e86454787e84d1f63d88e7c7e9743db1f37919196d960dc4781b6a78bd"
+    },
+    {
+      "file": "sharedassets4.assets",
+      "offset": 451852,
+      "size": 16,
+      "sha256": "4c7a0d01a2a33d18e55b46acbc6b2980330875d6f43fa51c693479ed78b8b4c0"
+    },
+    {
+      "file": "sharedassets4.assets",
+      "offset": 447629,
+      "size": 16,
+      "sha256": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb"
+    },
+    {
+      "file": "sharedassets3.assets.resS",
+      "offset": 40367552,
+      "size": 43704,
+      "sha256": "855c941d01093d407845af7f2a3d947d27527d0ae409ab2a83f8b29bbd5f37bc"
+    },
+    {
+      "file": "sharedassets4.assets",
+      "offset": 420504,
+      "size": 16,
+      "sha256": "97c4ef661cee84f35d0705fa419c84fcb4876a931c3e839ab29b550b134bc920"
+    },
+    {
+      "file": "sharedassets1.assets.resS",
+      "offset": 503190080,
+      "size": 349552,
+      "sha256": "3e9f358548e216e72d7c556edea967c9311b7a9f17d38706771db0002be92388"
+    },
+    {
+      "file": "sharedassets4.assets",
+      "offset": 424948,
+      "size": 16,
+      "sha256": "2dd15724913e771987e286526cd286fef135888dbfdeb1635e7a56b9b9f750f4"
+    },
+    {
+      "file": "sharedassets4.assets",
+      "offset": 420725,
+      "size": 16,
+      "sha256": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb"
+    },
+    {
+      "file": "sharedassets1.assets.resS",
+      "offset": 2141760,
+      "size": 43704,
+      "sha256": "1d5353fe85bca414f854cfd79e7f5f1fc64d8d44212966301154352d9e724e1a"
+    },
+    {
+      "file": "sharedassets4.assets",
+      "offset": 431272,
+      "size": 16,
+      "sha256": "dc66877cfe7b630e6eff03e32b7143fa563e33e3c1f15f740b33ddc67c8a09bb"
+    },
+    {
+      "file": "sharedassets1.assets.resS",
+      "offset": 212972048,
+      "size": 349552,
+      "sha256": "a780e4cba676cea6b2c66a0beabb16a64b9fd53d39369925e678156c1adb9dcb"
+    },
+    {
+      "file": "sharedassets4.assets",
+      "offset": 435716,
+      "size": 16,
+      "sha256": "439ff576e56568507cc704dee9497adddbb0deffffc70b58c829bad2298c239d"
+    },
+    {
+      "file": "sharedassets4.assets",
+      "offset": 431493,
+      "size": 16,
+      "sha256": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb"
+    },
+    {
+      "file": "sharedassets4.assets",
+      "offset": 442024,
+      "size": 16,
+      "sha256": "dc66877cfe7b630e6eff03e32b7143fa563e33e3c1f15f740b33ddc67c8a09bb"
+    },
+    {
+      "file": "sharedassets4.assets",
+      "offset": 446468,
+      "size": 16,
+      "sha256": "fd39bfe124613dfde94dfb4af3b371f2a4f443959c6103e06a2396ab7252a606"
+    },
+    {
+      "file": "sharedassets4.assets",
+      "offset": 442245,
+      "size": 16,
+      "sha256": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb"
+    },
+    {
+      "file": "sharedassets4.assets",
+      "offset": 425880,
+      "size": 16,
+      "sha256": "dc66877cfe7b630e6eff03e32b7143fa563e33e3c1f15f740b33ddc67c8a09bb"
+    },
+    {
+      "file": "sharedassets4.assets",
+      "offset": 430324,
+      "size": 16,
+      "sha256": "0a141ceb9b6ec0d8e837126d80be15aa6dddb4a3743d1c1d82ca82c345883c4d"
+    },
+    {
+      "file": "sharedassets4.assets",
+      "offset": 426101,
+      "size": 16,
+      "sha256": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb"
+    },
+    {
+      "file": "sharedassets4.assets",
+      "offset": 436648,
+      "size": 16,
+      "sha256": "dc66877cfe7b630e6eff03e32b7143fa563e33e3c1f15f740b33ddc67c8a09bb"
+    },
+    {
+      "file": "sharedassets4.assets",
+      "offset": 441092,
+      "size": 16,
+      "sha256": "3872df4ad6f803a924a87124ef9c2646f59daf6dde5d9bd4e3c41af008aa241f"
+    },
+    {
+      "file": "sharedassets4.assets",
+      "offset": 436869,
+      "size": 16,
+      "sha256": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb"
+    },
+    {
+      "file": "sharedassets1.assets",
+      "offset": 916284,
+      "size": 16,
+      "sha256": "dc66877cfe7b630e6eff03e32b7143fa563e33e3c1f15f740b33ddc67c8a09bb"
+    },
+    {
+      "file": "sharedassets1.assets",
+      "offset": 920460,
+      "size": 16,
+      "sha256": "228cbd2fa3d5180f9c701a77e1a64a5fccd01878727cb228324e3f67f84fb747"
+    },
+    {
+      "file": "sharedassets1.assets",
+      "offset": 920692,
+      "size": 16,
+      "sha256": "f79c12b68e151ff1a6a509039dd2865cd5cf9f603ddd8fad96e4df6057e69e20"
+    },
+    {
+      "file": "sharedassets1.assets",
+      "offset": 1717956,
+      "size": 16,
+      "sha256": "dc66877cfe7b630e6eff03e32b7143fa563e33e3c1f15f740b33ddc67c8a09bb"
+    },
+    {
+      "file": "sharedassets1.assets.resS",
+      "offset": 65247408,
+      "size": 794896,
+      "sha256": "5535aff09a5095807060df579cbcb455f98a0420ebb766d23a9b8a873a5594d3"
+    },
+    {
+      "file": "sharedassets1.assets",
+      "offset": 1722400,
+      "size": 16,
+      "sha256": "d3341b12bb51f5313eb5ca4de6018dd6dc701bcab13d64f417d32d9d7511826e"
+    },
+    {
+      "file": "sharedassets1.assets",
+      "offset": 1718177,
+      "size": 16,
+      "sha256": "374708fff7719dd5979ec875d56cd2286f6d3cf7ec317a3b25632aab28ec37bb"
+    },
+    {
+      "file": "level4",
+      "offset": 2153932,
+      "size": 40,
+      "sha256": "024c1d2f5de11d60af42ecacabecd1d2328c1e4d7bfd310888fc36d5291ec77b"
+    },
+    {
+      "file": "sharedassets4.assets.resS",
+      "offset": 24582864,
+      "size": 3808,
+      "sha256": "9651ea7178632365deff014622bba6bb53f14faba745399223222b8bff38bad9"
+    },
+    {
+      "file": "sharedassets4.assets",
+      "offset": 3269280,
+      "size": 510,
+      "sha256": "2c2367148751277ef354b71e6098e7d70e4aba1352d87a09ee090c7dfb3387a3"
+    },
+    {
+      "file": "level4",
+      "offset": 2171340,
+      "size": 40,
+      "sha256": "c57ba49cb9ea0b6452142e28721b2be570fe7b29bf4f461463310777710a1c86"
+    },
+    {
+      "file": "sharedassets4.assets.resS",
+      "offset": 24586672,
+      "size": 3808,
+      "sha256": "7fcd690edd0baa69a7a671fc92ba5dcc0e58f9e206cc963c35be49879dc9e547"
+    },
+    {
+      "file": "sharedassets4.assets",
+      "offset": 3483904,
+      "size": 510,
+      "sha256": "2c2367148751277ef354b71e6098e7d70e4aba1352d87a09ee090c7dfb3387a3"
+    },
+    {
+      "file": "level4",
+      "offset": 2168052,
+      "size": 40,
+      "sha256": "b110a401cc16ba8fb5842ae0fb752101f03287cc1c481e0e7df218661613d6c1"
+    },
+    {
+      "file": "sharedassets4.assets.resS",
+      "offset": 24606960,
+      "size": 3808,
+      "sha256": "7bbbc11fa02d0d1f3b76311cd5f0fcf47630694ab86ae46bdb88925bfc3e69ac"
+    },
+    {
+      "file": "sharedassets4.assets",
+      "offset": 6308368,
+      "size": 510,
+      "sha256": "2c2367148751277ef354b71e6098e7d70e4aba1352d87a09ee090c7dfb3387a3"
+    },
+    {
+      "file": "level4",
+      "offset": 2155788,
+      "size": 40,
+      "sha256": "ef040f1c91119d5302f5d3a7a70f1bee577a675ad170794eba12c3f8e1a15818"
+    },
+    {
+      "file": "sharedassets4.assets.resS",
+      "offset": 24235664,
+      "size": 3808,
+      "sha256": "d8f22a2c232e2851147a6dd3bf883809b548216eaa87745af19856422e757846"
+    },
+    {
+      "file": "sharedassets4.assets",
+      "offset": 727128,
+      "size": 510,
+      "sha256": "2c2367148751277ef354b71e6098e7d70e4aba1352d87a09ee090c7dfb3387a3"
+    },
+    {
+      "file": "level4",
+      "offset": 2145636,
+      "size": 40,
+      "sha256": "f57df48f9dd7fc2a427796f4d75c5ea3fd99edd06507faab61bd5357e0731b65"
+    },
+    {
+      "file": "sharedassets4.assets.resS",
+      "offset": 24590480,
+      "size": 3808,
+      "sha256": "72c3bddf5026651b4ba077f5d58df4a9ed70cfd6b623fdc07c429d8efbcfd2bd"
+    },
+    {
+      "file": "sharedassets4.assets",
+      "offset": 3486888,
+      "size": 510,
+      "sha256": "2c2367148751277ef354b71e6098e7d70e4aba1352d87a09ee090c7dfb3387a3"
+    },
+    {
+      "file": "level4",
+      "offset": 2160788,
+      "size": 40,
+      "sha256": "03e84bccb479265b4560e85396cbf375c4e3aec36cc50810be5c3cb71ce65888"
+    },
+    {
+      "file": "sharedassets4.assets.resS",
+      "offset": 24579056,
+      "size": 3808,
+      "sha256": "f6ced20df3090654b7b6e507b0b2ac409edd4f7c8b168d98ef62ae3f1c419fbc"
+    },
+    {
+      "file": "sharedassets4.assets",
+      "offset": 2584784,
+      "size": 510,
+      "sha256": "2c2367148751277ef354b71e6098e7d70e4aba1352d87a09ee090c7dfb3387a3"
+    },
+    {
+      "file": "level4",
+      "offset": 2175236,
+      "size": 40,
+      "sha256": "c5784df840e7b40ae89d33ea59d7bc0105992350f4e58109b9cdc556ee61b3b2"
+    },
+    {
+      "file": "sharedassets4.assets.resS",
+      "offset": 24594288,
+      "size": 3808,
+      "sha256": "42ad13a28aa85b037f34fc6497a291cff56c99f8a3b3a87e7d95909e048cd25b"
+    },
+    {
+      "file": "sharedassets4.assets",
+      "offset": 5077056,
+      "size": 510,
+      "sha256": "2c2367148751277ef354b71e6098e7d70e4aba1352d87a09ee090c7dfb3387a3"
+    },
+    {
+      "file": "level4",
+      "offset": 2134068,
+      "size": 40,
+      "sha256": "23fabe4126e29d27b45b33a59e52b99b888f449bf4330215b57bce619c616368"
+    },
+    {
+      "file": "sharedassets4.assets.resS",
+      "offset": 24613040,
+      "size": 3808,
+      "sha256": "e84ccbd6151dfc465769877bddc837e5e81fbcfd13d3ab8ff430ad025ecc7018"
+    },
+    {
+      "file": "sharedassets4.assets",
+      "offset": 7750280,
+      "size": 510,
+      "sha256": "2c2367148751277ef354b71e6098e7d70e4aba1352d87a09ee090c7dfb3387a3"
+    }
+  ],
+  "textures": [
+    {
+      "chunk": 3,
+      "width": 512,
+      "height": 512,
+      "format": 10,
+      "mips": 10
+    },
+    {
+      "chunk": 5,
+      "width": 512,
+      "height": 512,
+      "format": 12,
+      "mips": 10
+    },
+    {
+      "chunk": 8,
+      "width": 256,
+      "height": 256,
+      "format": 10,
+      "mips": 9
+    },
+    {
+      "chunk": 10,
+      "width": 512,
+      "height": 512,
+      "format": 12,
+      "mips": 10
+    },
+    {
+      "chunk": 13,
+      "width": 256,
+      "height": 256,
+      "format": 10,
+      "mips": 9
+    },
+    {
+      "chunk": 15,
+      "width": 512,
+      "height": 512,
+      "format": 12,
+      "mips": 10
+    },
+    {
+      "chunk": 31,
+      "width": 418,
+      "height": 357,
+      "format": 4,
+      "mips": 9
+    }
+  ],
+  "materials": [
+    {
+      "color": 6,
+      "emission": 7,
+      "texture": 0,
+      "normal": 1,
+      "uv": 4
+    },
+    {
+      "color": 11,
+      "emission": 12,
+      "texture": 2,
+      "normal": 3,
+      "uv": 9
+    },
+    {
+      "color": 16,
+      "emission": 17,
+      "texture": 4,
+      "normal": 5,
+      "uv": 14
+    },
+    {
+      "color": 19,
+      "emission": 20,
+      "texture": -1,
+      "normal": -1,
+      "uv": 18
+    },
+    {
+      "color": 22,
+      "emission": 23,
+      "texture": -1,
+      "normal": -1,
+      "uv": 21
+    },
+    {
+      "color": 25,
+      "emission": 26,
+      "texture": -1,
+      "normal": -1,
+      "uv": 24
+    },
+    {
+      "color": 28,
+      "emission": 29,
+      "texture": -1,
+      "normal": -1,
+      "uv": 27
+    },
+    {
+      "color": 32,
+      "emission": 33,
+      "texture": -1,
+      "normal": 6,
+      "uv": 30
+    }
+  ],
+  "meshes": [
+    {
+      "name": "ItemShip",
+      "transform": 0,
+      "vertices": 1,
+      "indices": 2,
+      "vertexCount": 6293,
+      "materials": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "submeshes": [
+        {
+          "start": 0,
+          "count": 6024
+        },
+        {
+          "start": 6024,
+          "count": 3468
+        },
+        {
+          "start": 9492,
+          "count": 960
+        },
+        {
+          "start": 10452,
+          "count": 480
+        },
+        {
+          "start": 10932,
+          "count": 3900
+        },
+        {
+          "start": 14832,
+          "count": 60
+        },
+        {
+          "start": 14892,
+          "count": 252
+        },
+        {
+          "start": 15144,
+          "count": 252
+        }
+      ]
+    },
+    {
+      "name": "Door1",
+      "transform": 34,
+      "vertices": 35,
+      "indices": 36,
+      "vertexCount": 119,
+      "materials": [
+        2
+      ],
+      "submeshes": [
+        {
+          "start": 0,
+          "count": 255
+        }
+      ]
+    },
+    {
+      "name": "Door2",
+      "transform": 37,
+      "vertices": 38,
+      "indices": 39,
+      "vertexCount": 119,
+      "materials": [
+        2
+      ],
+      "submeshes": [
+        {
+          "start": 0,
+          "count": 255
+        }
+      ]
+    },
+    {
+      "name": "Door3",
+      "transform": 40,
+      "vertices": 41,
+      "indices": 42,
+      "vertexCount": 119,
+      "materials": [
+        2
+      ],
+      "submeshes": [
+        {
+          "start": 0,
+          "count": 255
+        }
+      ]
+    },
+    {
+      "name": "Door4",
+      "transform": 43,
+      "vertices": 44,
+      "indices": 45,
+      "vertexCount": 119,
+      "materials": [
+        2
+      ],
+      "submeshes": [
+        {
+          "start": 0,
+          "count": 255
+        }
+      ]
+    },
+    {
+      "name": "Door5",
+      "transform": 46,
+      "vertices": 47,
+      "indices": 48,
+      "vertexCount": 119,
+      "materials": [
+        2
+      ],
+      "submeshes": [
+        {
+          "start": 0,
+          "count": 255
+        }
+      ]
+    },
+    {
+      "name": "Door6",
+      "transform": 49,
+      "vertices": 50,
+      "indices": 51,
+      "vertexCount": 119,
+      "materials": [
+        2
+      ],
+      "submeshes": [
+        {
+          "start": 0,
+          "count": 255
+        }
+      ]
+    },
+    {
+      "name": "Door7",
+      "transform": 52,
+      "vertices": 53,
+      "indices": 54,
+      "vertexCount": 119,
+      "materials": [
+        2
+      ],
+      "submeshes": [
+        {
+          "start": 0,
+          "count": 255
+        }
+      ]
+    },
+    {
+      "name": "Door8",
+      "transform": 55,
+      "vertices": 56,
+      "indices": 57,
+      "vertexCount": 119,
+      "materials": [
+        2
+      ],
+      "submeshes": [
+        {
+          "start": 0,
+          "count": 255
+        }
+      ]
+    }
+  ]
+}

@@ -72,7 +72,7 @@ public sealed class SpectatorInputService
     public bool DescendHeld => GetConfiguredKey(_descendKey, _settings.DescendKey);
 
     /// <summary>
-    /// Reads WASD plus configured vertical movement input.
+    /// Reads configured horizontal and vertical movement input.
     /// </summary>
     public Vector3 ReadMoveInput()
     {
@@ -86,12 +86,12 @@ public sealed class SpectatorInputService
         float y = 0f;
         float z = 0f;
 
-        if (IsPressed(keyboard, InputKey.A))
+        if (IsKeyHeld(_settings.Camera.MoveLeftKey.Value))
         {
             x -= 1f;
         }
 
-        if (IsPressed(keyboard, InputKey.D))
+        if (IsKeyHeld(_settings.Camera.MoveRightKey.Value))
         {
             x += 1f;
         }
@@ -106,12 +106,12 @@ public sealed class SpectatorInputService
             y += 1f;
         }
 
-        if (IsPressed(keyboard, InputKey.S))
+        if (IsKeyHeld(_settings.Camera.MoveBackKey.Value))
         {
             z -= 1f;
         }
 
-        if (IsPressed(keyboard, InputKey.W))
+        if (IsKeyHeld(_settings.Camera.MoveForwardKey.Value))
         {
             z += 1f;
         }
@@ -141,7 +141,7 @@ public sealed class SpectatorInputService
     /// </summary>
     public static bool IsKeyHeld(KeyCode key)
     {
-        return GetKey(key);
+        return GetKey(key) || GetKey(OtherModifier(key));
     }
 
     /// <summary>
@@ -149,8 +149,16 @@ public sealed class SpectatorInputService
     /// </summary>
     public static bool IsKeyPressedThisFrame(KeyCode key)
     {
-        return GetKeyDown(key);
+        return GetKeyDown(key) || GetKeyDown(OtherModifier(key));
     }
+
+    private static KeyCode OtherModifier(KeyCode key) => key switch
+    {
+        KeyCode.LeftAlt => KeyCode.RightAlt, KeyCode.RightAlt => KeyCode.LeftAlt,
+        KeyCode.LeftControl => KeyCode.RightControl, KeyCode.RightControl => KeyCode.LeftControl,
+        KeyCode.LeftShift => KeyCode.RightShift, KeyCode.RightShift => KeyCode.LeftShift,
+        _ => KeyCode.None
+    };
 
     private static bool GetKey(KeyCode key)
     {
@@ -182,7 +190,7 @@ public sealed class SpectatorInputService
         }
 
         Keyboard? keyboard = Keyboard.current;
-        return keyboard != null && IsPressed(keyboard, inputKey);
+        return keyboard != null && (IsPressed(keyboard, inputKey) || GetKey(OtherModifier(key)));
     }
 
     private static bool GetConfiguredKeyDown(SpectatorInputKeyCache cache, KeyCode key)
@@ -193,7 +201,7 @@ public sealed class SpectatorInputService
         }
 
         Keyboard? keyboard = Keyboard.current;
-        return keyboard != null && WasPressedThisFrame(keyboard, inputKey);
+        return keyboard != null && (WasPressedThisFrame(keyboard, inputKey) || GetKeyDown(OtherModifier(key)));
     }
 
     private static bool IsPressed(Keyboard keyboard, InputKey key)

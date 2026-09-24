@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace EnhancedSpectator.GameInterop;
@@ -14,14 +15,27 @@ public sealed class FearVisualSource
         Transform rendererRoot,
         bool forceRendererVisibility = false,
         bool useMeshBoundsForNormalization = false,
-        bool skinnedMeshOnly = false)
+        bool skinnedMeshOnly = false,
+        bool normalizeRootPose = false,
+        HashSet<Renderer>? includedRenderers = null,
+        bool miniature = false)
     {
         HierarchyRoot = hierarchyRoot ?? throw new ArgumentNullException(nameof(hierarchyRoot));
         RendererRoot = rendererRoot ?? throw new ArgumentNullException(nameof(rendererRoot));
         ForceRendererVisibility = forceRendererVisibility;
         UseMeshBoundsForNormalization = useMeshBoundsForNormalization;
         SkinnedMeshOnly = skinnedMeshOnly;
+        NormalizeRootPose = normalizeRootPose;
+        IncludedRenderers = includedRenderers;
+        Miniature = miniature;
     }
+
+    /// <summary>Normalizes scene/prefab root position and rotation before visual construction.</summary>
+    public bool NormalizeRootPose { get; }
+    /// <summary>Optional exact renderer allowlist for large scene structures.</summary>
+    public HashSet<Renderer>? IncludedRenderers { get; }
+    /// <summary>Fits longest dimension to the miniature display size.</summary>
+    public bool Miniature { get; }
 
     /// <summary>Gets the complete transform hierarchy required by renderer bones.</summary>
     public Transform HierarchyRoot { get; }

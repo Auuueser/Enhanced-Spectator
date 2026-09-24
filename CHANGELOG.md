@@ -3,6 +3,22 @@
 ## 中文
 
 <details>
+<summary><strong>0.3.5</strong></summary>
+
+### 观战系统拓展更新
+
+- 新增**队友第一人称**与 **10 种电影运镜**。
+- 扩展镜头调节：多种视角支持滚轮调距，第三人称支持 `Alt + 滚轮`，第一人称 FOV 可自定义。
+- 自由观战范围扩大至 **20 米**，优化室内及运动场景的镜头连续性。
+- 恐惧模式新增**废料、工具、物品、丛林狼、迷你飞船和补给火箭**，支持分类浏览与特色音效。
+- 新增模型渐隐、大小同步，并优化模型外观、缩略图与切换表现。
+- 新增分页设置、热键配置、恢复默认、动态按键提示及一键隐藏观战界面。
+- 优化恐惧音效多人同步与玩家名称显示。
+- **兼容MoreCompany、LCBetterClock** ，并更新中英文说明与实机展示。
+
+</details>
+
+<details>
 <summary><strong>0.3.1</strong></summary>
 
 ### 发布兼容性
@@ -142,6 +158,22 @@
 </details>
 
 ## English
+
+<details>
+<summary><strong>0.3.5</strong></summary>
+
+### Spectator system expansion
+
+- Add **teammate first-person spectating** and **10 cinematic camera styles**.
+- Expand camera controls: scroll-wheel distance adjustment in multiple views, `Alt + wheel` in third person, and customizable first-person FOV.
+- Extend freecam range to **20 m** and improve camera continuity indoors and during movement.
+- Expand fear mode with **scrap, tools, items, the bush wolf, miniature ship and delivery rocket**, with category browsing and distinctive sounds.
+- Add model fading and size synchronization; improve model appearance, thumbnails and switching.
+- Add paged settings, hotkey configuration, reset controls, dynamic key hints and a spectator HUD toggle.
+- Improve multiplayer fear-sound synchronization and player-name display.
+- Support **MoreCompany and LCBetterClock**, and refresh bilingual documentation and gameplay previews.
+
+</details>
 
 <details>
 <summary><strong>0.3.1</strong></summary>

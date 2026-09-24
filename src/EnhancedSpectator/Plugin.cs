@@ -11,6 +11,7 @@ namespace EnhancedSpectator;
 /// <summary>
 /// BepInEx entry point for Enhanced Spectator.
 /// </summary>
+[BepInDependency("me.swipez.melonloader.morecompany", BepInDependency.DependencyFlags.SoftDependency)]
 [BepInPlugin(PluginMetadata.Guid, PluginMetadata.Name, PluginMetadata.Version)]
 [BepInDependency(LCChineseProjectDetection.PluginGuid, BepInDependency.DependencyFlags.SoftDependency)]
 public sealed class Plugin : BaseUnityPlugin
@@ -28,7 +29,12 @@ public sealed class Plugin : BaseUnityPlugin
         Application.quitting += OnApplicationQuitting;
 
         EnhancedSpectatorConfig config = EnhancedSpectatorConfig.Bind(Config);
+        GameInterop.NativeFadePass.Configure(config.Camera);
+        config.Camera.FadeRadius.SettingChanged += (_, _) => LogFadeConfiguration(config);
+        config.Camera.FadeModelsWhileSpectating.SettingChanged += (_, _) => LogFadeConfiguration(config);
+        config.Camera.FadeModelsNearby.SettingChanged += (_, _) => LogFadeConfiguration(config);
         ModLog.SetDebugEnabled(config.EnableDebugLogging.Value);
+        LogFadeConfiguration(config);
         if (config.EnableDebugLogging.Value)
         {
             PluginDiagnostics.LogPluginBinaryHash(Info.Location);
@@ -44,6 +50,9 @@ public sealed class Plugin : BaseUnityPlugin
 
         ModLog.Info("Local spectator freecam initialized.");
     }
+
+    private static void LogFadeConfiguration(EnhancedSpectatorConfig config) =>
+        ModLog.Info($"Fade configuration: build={GameInterop.NativeFadePass.ImplementationId}, enabled={config.Camera.FadeModelsNearby.Value}, whileSpectating={config.Camera.FadeModelsWhileSpectating.Value}, radius={config.Camera.FadeRadius.Value:F2}, backend=native-whole-model. Camera preparation and draw submission are reported separately.");
 
     private void OnDestroy()
     {
@@ -78,6 +87,7 @@ public sealed class Plugin : BaseUnityPlugin
 
         _patchBootstrapper?.Dispose();
         _featureBootstrapper?.Dispose();
+        GameInterop.NativeFadePass.Shutdown();
 
         ModLog.Info("Local spectator freecam shut down.");
     }

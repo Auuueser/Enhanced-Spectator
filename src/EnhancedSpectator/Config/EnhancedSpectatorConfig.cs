@@ -9,6 +9,9 @@ namespace EnhancedSpectator.Config;
 /// </summary>
 public sealed class EnhancedSpectatorConfig
 {
+    /// <summary>Additional local camera settings.</summary>
+    public SpectatorCameraConfig Camera { get; private set; } = null!;
+
     private EnhancedSpectatorConfig(
         ConfigEntry<bool> enableSpectatorModule,
         ConfigEntry<bool> enableEnhancedSpectator,
@@ -983,7 +986,7 @@ public sealed class EnhancedSpectatorConfig
         ConfigEntry<float> freecamRadius = config.Bind(
             "Spectator.Freecam",
             "FreecamRadius",
-            8.0f,
+            Features.Spectator.SpectatorCameraRules.DefaultTravelRadius,
             EnhancedSpectatorText.Select(useChineseText, "Maximum freecam offset radius from the current target anchor.", "自由镜头相对当前观战目标锚点的最大半径。"));
 
         ConfigEntry<float> freecamMoveSpeed = config.Bind(
@@ -1100,8 +1103,8 @@ public sealed class EnhancedSpectatorConfig
             5.0f,
             EnhancedSpectatorText.Select(
                 useChineseText,
-                "Default distance behind your logical ghost. Use the mouse wheel in third person to zoom.",
-                "第三人称相机与自身鬼魂的默认距离；第三人称中可用鼠标滚轮缩放。"));
+                "Distance behind your logical ghost. Use the mouse wheel in third person to adjust distance.",
+                "第三人称相机与自身鬼魂的距离；滚轮调整距离。"));
 
         ConfigEntry<float> thirdPersonHeight = config.Bind(
             "Spectator.ThirdPerson",
@@ -1805,6 +1808,7 @@ public sealed class EnhancedSpectatorConfig
         ConfigFile advancedConfig = AdvancedConfigBinding.Create(advancedConfigPath, out bool migrateToAdvanced);
         bool advancedSaveOnConfigSet = advancedConfig.SaveOnConfigSet;
         advancedConfig.SaveOnConfigSet = false;
+        SpectatorDistanceMigration.Apply(advancedConfig, freecamRadius);
         enableSpectatorModule = AdvancedConfigBinding.Move(config, advancedConfig, enableSpectatorModule, migrateToAdvanced);
         freecamFastMoveMultiplier = AdvancedConfigBinding.Move(config, advancedConfig, freecamFastMoveMultiplier, migrateToAdvanced);
         freecamSlowMoveMultiplier = AdvancedConfigBinding.Move(config, advancedConfig, freecamSlowMoveMultiplier, migrateToAdvanced);
@@ -2053,6 +2057,6 @@ public sealed class EnhancedSpectatorConfig
             fearSoundMinDistance,
             fearSoundMaxDistance,
             fearSoundCooldownSeconds,
-            fearSoundMaxNearbyPlayers);
+            fearSoundMaxNearbyPlayers) { Camera = new SpectatorCameraConfig(advancedConfig) };
     }
 }

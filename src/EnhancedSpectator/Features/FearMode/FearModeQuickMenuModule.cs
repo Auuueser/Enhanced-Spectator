@@ -23,6 +23,11 @@ public sealed class FearModeQuickMenuModule : IFeatureModule, IRuntimeTickable
     private readonly SpectatorVoiceMuteState _voiceMuteState;
     private readonly FearQuickMenuCallbacks _callbacks;
     private readonly List<FearQuickMenuModelEntry> _entries = new List<FearQuickMenuModelEntry>();
+    private FearModelCategory _category;
+    private readonly List<string> _filteredKeys = new List<string>();
+    private readonly List<AudioClip> _availableSoundClips = new List<AudioClip>();
+    private string? _soundAvailabilityKey;
+    private int _nextSoundAvailabilityFrame;
     private int _selectedIndex;
     private int _pageIndex;
     private int _catalogFingerprint;
@@ -62,6 +67,12 @@ public sealed class FearModeQuickMenuModule : IFeatureModule, IRuntimeTickable
             ToggleGhostVoiceMute,
             ChangePage,
             SelectModel);
+        _callbacks.ChangeCategory = category =>
+        {
+            _category = category;
+            _pageIndex = 0;
+            _catalogFingerprint = int.MinValue;
+        };
     }
 
     /// <inheritdoc />
@@ -78,8 +89,16 @@ public sealed class FearModeQuickMenuModule : IFeatureModule, IRuntimeTickable
             return;
         }
 
-        _thumbnailProvider.Tick();
         bool quickMenuOpen = _quickMenuAdapter.IsQuickMenuOpen;
+        var audit = _thumbnailProvider as FearModelThumbnailService;
+        bool renderedAudit = audit?.TickDeveloperAudit() == true;
+        if (quickMenuOpen && audit != null && audit.TryGetAuditPage(out int auditPage))
+        {
+            _panelOpen = true;
+            _category = FearModelCategory.All;
+            _pageIndex = auditPage;
+        }
+        if (!renderedAudit) _thumbnailProvider.Tick();
         if (!quickMenuOpen)
         {
             HandleModelCycleHotkeys();
@@ -117,10 +136,13 @@ public sealed class FearModeQuickMenuModule : IFeatureModule, IRuntimeTickable
             if (_refreshCatalogOnOpen)
             {
                 _refreshCatalogOnOpen = false;
-                _service.RefreshCatalogNow();
+                // The network service already refreshes sources at a bounded cadence.
+                // Opening a retained view must not repeat a whole-scene source scan.
+                if (_service.Catalog.ModelKeys.Count <= 1) _service.RefreshCatalogNow();
             }
 
             RenderPanel();
+            audit?.CaptureAuditPage(FearQuickMenuRules.ResolvePageCount(_entries.Count));
         }
     }
 
@@ -141,9 +163,11 @@ public sealed class FearModeQuickMenuModule : IFeatureModule, IRuntimeTickable
             return;
         }
 
-        int direction = SpectatorInputService.IsKeyPressedThisFrame(_config.FearModelPreviousKey.Value)
+        bool Pressed(KeyCode key) => (SpectatorFreecamController.Current?.AllowsModelShortcut(key) ?? true)
+            && SpectatorInputService.IsKeyPressedThisFrame(key);
+        int direction = Pressed(_config.FearModelPreviousKey.Value)
             ? -1
-            : SpectatorInputService.IsKeyPressedThisFrame(_config.FearModelNextKey.Value)
+            : Pressed(_config.FearModelNextKey.Value)
                 ? 1
                 : 0;
         if (direction == 0
@@ -168,13 +192,22 @@ public sealed class FearModeQuickMenuModule : IFeatureModule, IRuntimeTickable
             }
         }
 
-        _selectedIndex = FearModelCycleRules.ResolveNextIndex(currentIndex, keys.Count, direction);
-        SubmitSelection(keys[_selectedIndex]);
+        for (int attempt = 0; attempt < keys.Count; attempt++)
+        {
+            currentIndex = FearModelCycleRules.ResolveNextIndex(currentIndex, keys.Count, direction);
+            if (!_service.CanSelectCatalogKey(keys[currentIndex])) continue;
+            _selectedIndex = currentIndex;
+            SubmitSelection(keys[currentIndex]);
+            break;
+        }
     }
 
     private void RenderPanel()
     {
-        IReadOnlyList<string> keys = _service.Catalog.ModelKeys;
+        _filteredKeys.Clear();
+        foreach (string key in _service.Catalog.ModelKeys)
+            if (_category == FearModelCategory.All || FearModelIdentityRules.Category(key) == _category) _filteredKeys.Add(key);
+        IReadOnlyList<string> keys = _filteredKeys;
         bool localPlayerDead = _gameAdapter.TryGetLocalDeadPlayerIdentity(out ulong clientId, out _);
         string selectedKey = FearModeRules.DefaultModelKey;
         if (localPlayerDead
@@ -211,6 +244,7 @@ public sealed class FearModeQuickMenuModule : IFeatureModule, IRuntimeTickable
             }
         }
 
+        if (_thumbnailProvider is FearModelThumbnailService capture && capture.TryGetAuditPage(out int requestedPage)) _pageIndex = requestedPage;
         _pageIndex = FearQuickMenuRules.ClampPage(_pageIndex, _entries.Count);
         bool canSelect = FearQuickMenuRules.CanSelectModel(
             _service.IsSessionEnabled,
@@ -219,6 +253,13 @@ public sealed class FearModeQuickMenuModule : IFeatureModule, IRuntimeTickable
             _service.IsSessionEnabled,
             _service.IsLocalRenderingEnabled,
             localPlayerDead);
+        if (_soundAvailabilityKey != selectedKey || Time.frameCount >= _nextSoundAvailabilityFrame)
+        {
+            _gameAdapter.CopyFearSoundClipsTo(selectedKey, _availableSoundClips);
+            _soundAvailabilityKey = selectedKey;
+            _nextSoundAvailabilityFrame = Time.frameCount + 120;
+        }
+        canUseSound = canUseSound && _availableSoundClips.Count > 0 && _service.CanUseModelSound(selectedKey);
         string selectedDisplayName = FearModelUiPresentationRules.ResolveDisplayName(
             selectedKey,
             _config.UseChineseText);
@@ -235,7 +276,24 @@ public sealed class FearModeQuickMenuModule : IFeatureModule, IRuntimeTickable
             _soundActions.IsLocalSoundPlaying || Time.unscaledTime < _soundButtonHighlightUntil,
             Time.unscaledTime < _nextSoundButtonHighlightUntil,
             _voiceMuteState.IsMuted,
-            selectedDisplayName));
+            selectedDisplayName)
+        {
+            SupportsExpandedModels = _service.SupportsExpandedCatalog,
+            DropshipAvailable = _service.Catalog.TryGetVisualSource(FearModelIdentityRules.Dropship, out _),
+            Category = _category,
+            StatusText = ResolveStatus(localPlayerDead)
+        });
+    }
+
+    private string ResolveStatus(bool localDead)
+    {
+        bool cn = _config.UseChineseText;
+        if (!_config.EnableNetworking.Value) return cn ? "网络功能已关闭；本地观战选项仍可使用" : "Networking disabled; local view options remain available";
+        if (!_service.HasCompatibleHost) return cn ? "房主未提供兼容恐惧模式；本地选项可用" : "No compatible fear host; local options available";
+        if (!_service.IsSessionEnabled) return cn ? "房主尚未开启恐惧模式" : "Fear mode is disabled by the host";
+        if (!localDead) return cn ? "死亡后可选择恐惧模型和播放音效" : "Model selection and sounds are available after death";
+        if (!_service.SupportsExpandedCatalog) return cn ? "房主版本较旧；新增模型不可选择" : "Older host: expanded models are unavailable";
+        return string.Empty;
     }
 
     private void TogglePanel()
@@ -311,11 +369,12 @@ public sealed class FearModeQuickMenuModule : IFeatureModule, IRuntimeTickable
             return;
         }
 
-        SubmitSelection(modelKey);
+        if (_service.CanSelectCatalogKey(modelKey)) SubmitSelection(modelKey);
     }
 
     private void SubmitSelection(string modelKey)
     {
+        FearVisualWorkSchedule.Shared.ModelChanged(UnityEngine.Time.frameCount);
         if (!_service.TrySelectLocalModel(modelKey, out string reason))
         {
             ModLog.Warning($"Fear model selection rejected: {reason}.");

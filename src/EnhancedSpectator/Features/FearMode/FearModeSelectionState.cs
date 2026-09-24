@@ -14,12 +14,14 @@ public sealed class FearModeSelectionState : IEquatable<FearModeSelectionState>
         ulong clientId,
         ulong playerSlotId,
         string modelKey,
-        long revision)
+        long revision,
+        float modelScale = 1f)
     {
         ClientId = clientId;
         PlayerSlotId = playerSlotId;
         ModelKey = modelKey ?? string.Empty;
         Revision = revision;
+        ModelScale = FearModelAppearanceRules.ClampScale(modelScale);
     }
 
     /// <summary>Gets the player Netcode client id that owns this selection.</summary>
@@ -34,6 +36,9 @@ public sealed class FearModeSelectionState : IEquatable<FearModeSelectionState>
     /// <summary>Gets the monotonic revision supplied by the owning player.</summary>
     public long Revision { get; }
 
+    /// <summary>Owner-selected multiplier; legacy packets default to one.</summary>
+    public float ModelScale { get; }
+
     /// <inheritdoc />
     public bool Equals(FearModeSelectionState? other)
     {
@@ -41,7 +46,7 @@ public sealed class FearModeSelectionState : IEquatable<FearModeSelectionState>
             && ClientId == other.ClientId
             && PlayerSlotId == other.PlayerSlotId
             && string.Equals(ModelKey, other.ModelKey, StringComparison.Ordinal)
-            && Revision == other.Revision;
+            && Revision == other.Revision && ModelScale == other.ModelScale;
     }
 
     /// <inheritdoc />
@@ -57,6 +62,7 @@ public sealed class FearModeSelectionState : IEquatable<FearModeSelectionState>
         hash = (hash * 397) ^ PlayerSlotId.GetHashCode();
         hash = (hash * 397) ^ StringComparer.Ordinal.GetHashCode(ModelKey);
         hash = (hash * 397) ^ Revision.GetHashCode();
+        hash = (hash * 397) ^ ModelScale.GetHashCode();
         return hash;
     }
 }

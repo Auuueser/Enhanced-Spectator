@@ -10,8 +10,10 @@ namespace EnhancedSpectator.GameInterop;
 /// <summary>
 /// Reads confirmed V81 player and enemy visual-source state through direct publicized members.
 /// </summary>
-public sealed class LethalCompanyFearModeAdapter : IGameFearModeAdapter
+public sealed partial class LethalCompanyFearModeAdapter : IGameFearModeAdapter, IDisposable
 {
+    /// <summary>Releases the renderer-only dropship source kept across moon unloads.</summary>
+    public void Dispose() { _dropshipSnapshot?.Dispose(); _originalDropship.Dispose(); _originalDropshipSounds.Dispose(); _dropshipSnapshot = null; _dropshipSource = null; }
     /// <inheritdoc />
     public bool TryGetLocalDeadPlayerIdentity(out ulong clientId, out ulong slotId)
     {
@@ -102,6 +104,7 @@ public sealed class LethalCompanyFearModeAdapter : IGameFearModeAdapter
     public void CopyAvailableModelKeysTo(List<string> destination)
     {
         destination.Clear();
+        RefreshExpandedSources(destination);
         StartOfRound round = StartOfRound.Instance;
         if (round == null || round.levels == null)
         {
@@ -123,9 +126,10 @@ public sealed class LethalCompanyFearModeAdapter : IGameFearModeAdapter
     }
 
     /// <inheritdoc />
-    public bool TryGetEnemyVisualSource(string modelKey, out FearVisualSource? source)
+    public bool TryGetVisualSource(string modelKey, out FearVisualSource? source)
     {
         source = null;
+        if (_expandedSources.TryGetValue(modelKey, out source) && source.HierarchyRoot != null) return true;
         if (!FearModeRules.IsValidModelKey(modelKey))
         {
             return false;
@@ -160,6 +164,7 @@ public sealed class LethalCompanyFearModeAdapter : IGameFearModeAdapter
     public void CopyFearSoundClipsTo(string modelKey, List<AudioClip> destination)
     {
         destination.Clear();
+        if (CopyExpandedClips(modelKey, destination)) return;
         if (string.Equals(modelKey, FearModeRules.DefaultModelKey, StringComparison.Ordinal))
         {
             CopyDefaultPlayerDeathClipsTo(destination);
@@ -587,6 +592,7 @@ public sealed class LethalCompanyFearModeAdapter : IGameFearModeAdapter
     private static bool TryFindEnemyType(string modelKey, out EnemyType? resolved)
     {
         resolved = null;
+        if (modelKey == FearModelIdentityRules.BushWolf) return TryGetBushWolf(out resolved);
         if (!FearModeRules.IsValidModelKey(modelKey))
         {
             return false;

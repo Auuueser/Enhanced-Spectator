@@ -1,5 +1,6 @@
 using System;
 using EnhancedSpectator.Features.FearMode;
+using EnhancedSpectator.Features.Spectator;
 using EnhancedSpectator.Logging;
 using GameNetcodeStuff;
 using TMPro;
@@ -12,7 +13,7 @@ namespace EnhancedSpectator.GameInterop;
 /// Attaches a mod-owned retained view to the confirmed V81 quick-menu canvas.
 /// Original player-list objects and listeners are never mutated.
 /// </summary>
-public sealed class LethalCompanyFearQuickMenuAdapter : IGameFearQuickMenuAdapter
+public sealed partial class LethalCompanyFearQuickMenuAdapter : IGameFearQuickMenuAdapter
 {
     private const int CardCount = FearQuickMenuRules.PageSize;
     private static readonly Color NormalButtonColor = new Color(0.23f, 0.14f, 0.09f, 0.96f);
@@ -41,9 +42,10 @@ public sealed class LethalCompanyFearQuickMenuAdapter : IGameFearQuickMenuAdapte
     private TextMeshProUGUI? _pageText;
 
     /// <summary>Creates an adapter backed by renderer-only model thumbnails.</summary>
-    public LethalCompanyFearQuickMenuAdapter(IFearModelThumbnailProvider thumbnails)
+    public LethalCompanyFearQuickMenuAdapter(IFearModelThumbnailProvider thumbnails, SpectatorOptionsController options)
     {
         _thumbnails = thumbnails ?? throw new ArgumentNullException(nameof(thumbnails));
+        _options = options ?? throw new ArgumentNullException(nameof(options));
     }
 
     /// <inheritdoc />
@@ -114,6 +116,7 @@ public sealed class LethalCompanyFearQuickMenuAdapter : IGameFearQuickMenuAdapte
     /// <inheritdoc />
     public void SetPanelVisible(bool visible)
     {
+        if (!visible) CancelHotkeyCapture();
         if (_panelObject != null && _panelObject.activeSelf != visible)
         {
             _panelObject.SetActive(visible);
@@ -139,7 +142,7 @@ public sealed class LethalCompanyFearQuickMenuAdapter : IGameFearQuickMenuAdapte
         }
 
         bool chinese = state.UseChineseText;
-        SetText(_titleText, chinese ? "增强观战：恐惧模式" : "ENHANCED SPECTATOR: FEAR MODE");
+        SetText(_titleText, chinese ? (_optionsOpen ? "增强观战：选项" : "增强观战：恐惧模式") : (_optionsOpen ? "ENHANCED SPECTATOR: OPTIONS" : "ENHANCED SPECTATOR: FEAR MODE"));
         SetText(
             _hostText,
             chinese
@@ -163,7 +166,7 @@ public sealed class LethalCompanyFearQuickMenuAdapter : IGameFearQuickMenuAdapte
                 : (state.GhostVoiceMuted ? "GHOST VOICE: MUTED" : "GHOST VOICE: ON"));
         SetText(
             _selectedText,
-            chinese
+            !string.IsNullOrEmpty(state.StatusText) ? state.StatusText : chinese
                 ? $"当前模型：{state.SelectedDisplayName}"
                 : $"SELECTED MODEL: {state.SelectedDisplayName}");
         SetText(_pageText, $"{state.PageIndex + 1} / {state.PageCount}");
@@ -183,6 +186,9 @@ public sealed class LethalCompanyFearQuickMenuAdapter : IGameFearQuickMenuAdapte
             _voiceMuteButton,
             FearQuickMenuButtonRules.ShouldHighlightGhostVoiceEnabled(state.GhostVoiceMuted));
 
+        // Page visibility is applied last so shared host controls cannot reappear over camera rows.
+        RenderOptions(state);
+        if (_optionsOpen) return;
         int firstIndex = state.PageIndex * FearQuickMenuRules.PageSize;
         for (int slotIndex = 0; slotIndex < _cards.Length; slotIndex++)
         {
@@ -197,11 +203,12 @@ public sealed class LethalCompanyFearQuickMenuAdapter : IGameFearQuickMenuAdapte
             FearQuickMenuModelEntry entry = state.Entries[entryIndex];
             _thumbnails.Request(entry.ModelKey);
             _thumbnails.TryGet(entry.ModelKey, out Sprite? thumbnail);
+            bool pendingDropship = entry.ModelKey == FearModelIdentityRules.Dropship && !state.DropshipAvailable;
             card.Set(
                 entry.ModelKey,
-                entry.DisplayName,
+                pendingDropship ? (state.UseChineseText ? "补给火箭（外观待加载）" : "Delivery rocket (visual pending)") : entry.DisplayName,
                 entry.Selected,
-                state.CanSelectModels,
+                !pendingDropship && state.CanSelectModels && (state.SupportsExpandedModels || !FearModelIdentityRules.IsExpanded(entry.ModelKey)),
                 thumbnail);
         }
     }
@@ -333,6 +340,7 @@ public sealed class LethalCompanyFearQuickMenuAdapter : IGameFearQuickMenuAdapte
         _voiceMuteText = CreateButtonText(voiceMuteObject.transform, textTemplate, string.Empty, 10.5f);
         _voiceMuteButton.onClick.AddListener(() => _callbacks?.ToggleGhostVoiceMute());
 
+        BuildOptions(panelRect, buttonTemplate, textTemplate);
         _entryObject.SetActive(false);
         _panelObject.SetActive(false);
         _entryObject.transform.SetAsLastSibling();
@@ -340,12 +348,16 @@ public sealed class LethalCompanyFearQuickMenuAdapter : IGameFearQuickMenuAdapte
 
     private void DisposeView()
     {
+        CancelHotkeyCapture();
         if (_root != null)
         {
             _root.SetActive(false);
             UnityEngine.Object.Destroy(_root);
         }
 
+        _optionsRoot = null;
+        _catalogRoot = null;
+        _optionsOpen = false;
         _quickMenu = null;
         _callbacks = null;
         _root = null;
@@ -494,8 +506,14 @@ public sealed class LethalCompanyFearQuickMenuAdapter : IGameFearQuickMenuAdapte
         float fontSize)
     {
         TextMeshProUGUI text = CreateText("Label", parent, template, fontSize, TextAlignmentOptions.Center);
-        Stretch((RectTransform)text.transform, 5f);
+        Stretch((RectTransform)text.transform, 0f);
+        text.margin = new Vector4(4f, 0f, 4f, 0f);
+        text.alignment = TextAlignmentOptions.Midline;
+        text.fontStyle = FontStyles.Normal;
+        text.enableWordWrapping = false;
+        text.overflowMode = TextOverflowModes.Overflow;
         text.text = value;
+        // Labels are populated later. Never choose clipping/padding based on their initial empty text.
         return text;
     }
 

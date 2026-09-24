@@ -7,6 +7,8 @@ namespace EnhancedSpectator.Features.FearMode;
 /// </summary>
 public static class FearSoundRules
 {
+    /// <summary>Reception preference is local; own preview remains available.</summary>
+    public static bool ShouldHear(bool ownSound, bool receiveOtherSounds) => ownSound || receiveOtherSounds;
     /// <summary>Gets whether a host may authorize one requested sound.</summary>
     public static bool CanHostAccept(
         bool isHost,

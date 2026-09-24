@@ -12,7 +12,8 @@ public sealed class FearSoundEventState
         string modelKey,
         FearSoundAction action,
         int clipIndex,
-        long sequence)
+        long sequence,
+        string catalogFingerprint = "")
     {
         ClientId = clientId;
         PlayerSlotId = playerSlotId;
@@ -20,7 +21,11 @@ public sealed class FearSoundEventState
         Action = action;
         ClipIndex = clipIndex;
         Sequence = sequence;
+        CatalogFingerprint = catalogFingerprint;
     }
+
+    /// <summary>Optional item catalog digest; empty for unchanged legacy monster audio.</summary>
+    public string CatalogFingerprint { get; }
 
     /// <summary>Gets the originating Netcode client id.</summary>
     public ulong ClientId { get; }

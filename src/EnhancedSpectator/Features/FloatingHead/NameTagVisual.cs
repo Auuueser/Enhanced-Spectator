@@ -110,6 +110,7 @@ public sealed class NameTagVisual : IDisposable
     /// </summary>
     public void SetVisible(bool visible)
     {
+        visible &= !GameInterop.LethalCompanySpectatorUiVisibility.Hidden;
         if (_disposed || _gameObject == null)
         {
             return;

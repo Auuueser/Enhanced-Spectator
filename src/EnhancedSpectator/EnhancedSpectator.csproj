@@ -2,6 +2,7 @@
   <PropertyGroup>
     <TargetFramework>netstandard2.1</TargetFramework>
     <AssemblyName>EnhancedSpectator</AssemblyName>
+    <Version>0.3.5</Version>
     <RootNamespace>EnhancedSpectator</RootNamespace>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
@@ -11,6 +12,7 @@
 
   <PropertyGroup>
     <GameDir Condition="'$(GameDir)' == ''">D:\Steam\steamapps\common\Lethal Company</GameDir>
+    <MoreCompanyPath Condition="'$(MoreCompanyPath)' == ''">D:\1New R2modman\LethalCompany\profiles\test5\BepInEx\plugins\notnotnotswipez-MoreCompany\MoreCompany.dll</MoreCompanyPath>
     <ManagedDir Condition="'$(ManagedDir)' == ''">$(GameDir)\Lethal Company_Data\Managed</ManagedDir>
   </PropertyGroup>
 
@@ -18,10 +20,17 @@
     <PackageReference Include="BepInEx.Core" Version="5.4.21" PrivateAssets="all" ExcludeAssets="runtime" />
     <PackageReference Include="BepInEx.AssemblyPublicizer.MSBuild" Version="0.4.3" PrivateAssets="all" />
     <PackageReference Include="HarmonyX" Version="2.7.0" PrivateAssets="all" ExcludeAssets="runtime" />
-    <PackageReference Include="UnityEngine.Modules" Version="2021.3.33" PrivateAssets="all" ExcludeAssets="runtime" />
   </ItemGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="GameInterop\V81DropshipLayout.json" />
+    <EmbeddedResource Include="GameInterop\V81DropshipAudio.json" />
+    <EmbeddedResource Include="Resources\nativefade.bundle" />
+    <InternalsVisibleTo Include="EnhancedSpectator.Tests" />
+    <!-- HDRP renderer-list ABI must match V81's installed Unity, not the old 2021 stubs. -->
+    <Reference Include="$(ManagedDir)\UnityEngine*.dll" Private="false" />
+    <Reference Include="MoreCompany" HintPath="$(MoreCompanyPath)" Private="false" />
+    <Reference Include="Unity.Animation.Rigging" HintPath="$(ManagedDir)\Unity.Animation.Rigging.dll" Private="false" />
     <Reference Include="Assembly-CSharp"
                HintPath="$(ManagedDir)\Assembly-CSharp.dll"
                Private="false"
@@ -29,6 +38,7 @@
                Condition="Exists('$(ManagedDir)\Assembly-CSharp.dll')" />
     <Reference Include="Unity.Netcode.Runtime"
                HintPath="$(ManagedDir)\Unity.Netcode.Runtime.dll"
+               Publicize="true"
                Private="false"
                Condition="Exists('$(ManagedDir)\Unity.Netcode.Runtime.dll')" />
     <Reference Include="Unity.Collections"
@@ -64,4 +74,8 @@
                Private="false"
                Condition="Exists('$(ManagedDir)\Facepunch.Steamworks.Win64.dll')" />
   </ItemGroup>
+
+  <Target Name="CheckOptionalAdapterBuildReference" BeforeTargets="ResolveReferences">
+    <Error Condition="!Exists('$(MoreCompanyPath)')" Text="Building the optional MoreCompany adapter requires a local MoreCompany.dll. Set -p:MoreCompanyPath to that file. Do not redistribute it with this plugin." />
+  </Target>
 </Project>

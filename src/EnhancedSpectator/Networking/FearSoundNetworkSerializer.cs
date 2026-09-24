@@ -19,7 +19,8 @@ public static class FearSoundNetworkSerializer
         + FastBufferWriter.GetWriteSize<FixedString64Bytes>()
         + FastBufferWriter.GetWriteSize<int>()
         + FastBufferWriter.GetWriteSize<int>()
-        + FastBufferWriter.GetWriteSize<long>();
+        + FastBufferWriter.GetWriteSize<long>()
+        + FastBufferWriter.GetWriteSize<FixedString64Bytes>();
 
     /// <summary>Writes a sound capability packet.</summary>
     public static void WriteCapability(ref FastBufferWriter writer)
@@ -50,7 +51,7 @@ public static class FearSoundNetworkSerializer
     }
 
     /// <summary>Writes a sound request or host-authorized event.</summary>
-    public static void WriteEvent(ref FastBufferWriter writer, FearSoundEventState state)
+    public static void WriteEvent(ref FastBufferWriter writer, FearSoundEventState state, string catalogFingerprint = "")
     {
         FixedString64Bytes modelKey = state.ModelKey;
         writer.WriteValueSafe(FearModeNetworkConstants.SoundProtocolVersion);
@@ -60,6 +61,11 @@ public static class FearSoundNetworkSerializer
         writer.WriteValueSafe((int)state.Action);
         writer.WriteValueSafe(state.ClipIndex);
         writer.WriteValueSafe(state.Sequence);
+        if (FearItemSoundCompatibility.UsesCatalogFingerprint(state.ModelKey) && state.Action != FearSoundAction.Stop)
+        {
+            FixedString64Bytes fingerprint = catalogFingerprint;
+            writer.WriteValueSafe(fingerprint);
+        }
     }
 
     /// <summary>Reads and validates a sound request or event.</summary>
@@ -101,7 +107,22 @@ public static class FearSoundNetworkSerializer
                 return false;
             }
 
-            state = new FearSoundEventState(clientId, slotId, key, action, clipIndex, sequence);
+            string fingerprint = string.Empty;
+            // FixedString is length-prefixed on the wire, NOT its 64-byte in-memory struct.
+            // A SHA256 Base64 digest occupies 4 + 44 bytes. Requiring 64 silently skipped
+            // every valid digest, so local playback worked while peers rejected item/rocket sounds.
+            if (FearItemSoundCompatibility.UsesCatalogFingerprint(key) && action != FearSoundAction.Stop
+                && reader.TryBeginRead(sizeof(int)))
+            {
+                int remaining = reader.Length - reader.Position;
+                if (remaining != FearSoundFingerprintWire.WireLength)
+                { reason = "invalid fear sound digest length"; return false; }
+                var tail = new byte[remaining];
+                reader.ReadBytesSafe(ref tail, remaining);
+                if (!FearSoundFingerprintWire.TryDecode(tail, out fingerprint))
+                { reason = "invalid fear sound digest"; return false; }
+            }
+            state = new FearSoundEventState(clientId, slotId, key, action, clipIndex, sequence, fingerprint);
             return true;
         }
         catch (Exception ex)

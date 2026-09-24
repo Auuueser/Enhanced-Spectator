@@ -57,6 +57,13 @@ public sealed class SpectatorCameraState
     /// </summary>
     public bool IsThirdPerson => IsActive && Mode == SpectatorCameraMode.ThirdPerson;
 
+    /// <summary>Actual local model center relative to the logical ghost, in representation coordinates.</summary>
+    public Vector3 LocalModelCenter { get; internal set; }
+    /// <summary>Radius of the local model bounds, including the configured scale.</summary>
+    public float LocalModelRadius { get; internal set; }
+    /// <summary>Whether the fear renderer currently supplies local composition bounds.</summary>
+    public bool HasLocalModelBounds { get; internal set; }
+
     /// <summary>
     /// Gets the current target slot id when available.
     /// </summary>

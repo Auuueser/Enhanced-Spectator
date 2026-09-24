@@ -30,6 +30,8 @@ public static class FearModelPresentationRules
     /// <summary>Returns the model-space Euler correction for a known V81 bind pose.</summary>
     public static Vector3 ResolveCorrectionEuler(string? modelKey)
     {
+        if (modelKey != null && modelKey.StartsWith("item:", StringComparison.Ordinal)) return FearItemPoseRules.WorldEuler(modelKey);
+        if (modelKey == FearModelIdentityRules.Dropship) return new Vector3(-90f, 0f, 0f);
         if (EqualsKey(modelKey, "Baboon hawk")
             || EqualsKey(modelKey, "Bunker Spider")
             || EqualsKey(modelKey, "Crawler")
@@ -71,6 +73,8 @@ public static class FearModelPresentationRules
     /// </summary>
     public static Quaternion ResolveWorldRotation(Quaternion spectatorLookRotation, string? modelKey)
     {
+        if (modelKey != null && modelKey.StartsWith("item:", StringComparison.Ordinal))
+            return FearItemPoseRules.WorldRotation(spectatorLookRotation.eulerAngles.y, modelKey);
         Vector3 correction = ResolveCorrectionEuler(modelKey);
         return Quaternion.Euler(
             correction.x,

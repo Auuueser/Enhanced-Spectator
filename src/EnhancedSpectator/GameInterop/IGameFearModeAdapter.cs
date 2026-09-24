@@ -23,12 +23,12 @@ public interface IGameFearModeAdapter
     /// <summary>Attempts to get the local active audio-listener world position.</summary>
     bool TryGetActiveAudioListenerPosition(out Vector3 position);
 
-    /// <summary>Copies available bounded enemy model keys into caller-owned storage.</summary>
+    /// <summary>Copies available bounded original visual model keys into caller-owned storage.</summary>
     void CopyAvailableModelKeysTo(List<string> destination);
 
     /// <summary>Resolves loaded hierarchy and renderer roots as read-only visual source data.</summary>
-    bool TryGetEnemyVisualSource(string modelKey, out FearVisualSource? source);
+    bool TryGetVisualSource(string modelKey, out FearVisualSource? source);
 
-    /// <summary>Copies safe original monster clips for the selected model into caller-owned storage.</summary>
+    /// <summary>Copies safe original clips for the selected model into caller-owned storage.</summary>
     void CopyFearSoundClipsTo(string modelKey, List<AudioClip> destination);
 }

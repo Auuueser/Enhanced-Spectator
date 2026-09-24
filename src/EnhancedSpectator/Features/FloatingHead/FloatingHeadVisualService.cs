@@ -79,6 +79,14 @@ public sealed class FloatingHeadVisualService : IDisposable
         _visualFactory = visualFactory ?? throw new ArgumentNullException(nameof(visualFactory));
         _fearVisualOverrides = fearVisualOverrides;
         _posePresentationService = posePresentationService;
+        _config.Camera.FadeModelsNearby.SettingChanged += OnFadePreferenceChanged;
+        _config.Camera.FadeModelsWhileSpectating.SettingChanged += OnFadePreferenceChanged;
+    }
+
+    private void OnFadePreferenceChanged(object sender, EventArgs args)
+    {
+        if (!LethalCompanyFearViewCamera.ShouldFade(_config.Camera))
+            foreach (var visual in _visuals.Values) visual.FadeNearby = false;
     }
 
     /// <summary>
@@ -188,6 +196,8 @@ public sealed class FloatingHeadVisualService : IDisposable
         }
 
         DestroyAll("dispose");
+        _config.Camera.FadeModelsNearby.SettingChanged -= OnFadePreferenceChanged;
+        _config.Camera.FadeModelsWhileSpectating.SettingChanged -= OnFadePreferenceChanged;
         if (_screenMarkerTexture != null)
         {
             UnityEngine.Object.Destroy(_screenMarkerTexture);
@@ -405,6 +415,9 @@ public sealed class FloatingHeadVisualService : IDisposable
             float scale = updateDynamicState
                 ? CalculateVisualScale(spectator, visual)
                 : visual.CurrentScale;
+            visual.FadeNearby = LethalCompanyFearViewCamera.ShouldFade(_config.Camera);
+            if (renderingCamera == null) visual.PrepareCameraFade();
+            visual.SetWatchedTarget(spectator.PoseState?.TargetClientId, spectator.PoseState?.TargetPlayerSlotId);
             if (updateDynamicState)
             {
                 UpdateNameTagText(spectator, visual);
@@ -514,7 +527,7 @@ public sealed class FloatingHeadVisualService : IDisposable
             : _config.VisualStyle.Value == FloatingHeadVisualStyle.Sphere
             ? _config.PlaceholderScale.Value
             : _config.BillboardSize.Value;
-        return Mathf.Max(0.01f, baseScale * scaleMultiplier);
+        return Mathf.Max(0.01f, baseScale * scaleMultiplier * (_fearVisualOverrides?.GetOwnerScale(spectator.SpectatorClientId) ?? 1f));
     }
 
     private FloatingHeadVisual? CreateVisual(
@@ -1119,7 +1132,15 @@ public sealed class FloatingHeadVisualService : IDisposable
 
         RefreshNameTagTextCache();
         string text;
-        if (_nameTagTextCache.TryGetValue(spectator.SpectatorClientId, out NameTagTextCacheEntry entry)
+        if (_config.NameTagUseGamePlayerNames.Value
+            && LethalCompanyPlayerNameRepair.TryGetVerifiedDisplayName(
+                spectator.SpectatorClientId, spectator.SpectatorSlotId, out string repairedName))
+        {
+            // Verified local repair takes precedence over an identity received before the repair.
+            // Do not cache it: disabling repair must immediately expose the original identity again.
+            text = repairedName;
+        }
+        else if (_nameTagTextCache.TryGetValue(spectator.SpectatorClientId, out NameTagTextCacheEntry entry)
             && entry.SpectatorSlotId == spectator.SpectatorSlotId)
         {
             text = entry.Text;

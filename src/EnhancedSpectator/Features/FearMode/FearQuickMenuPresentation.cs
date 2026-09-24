@@ -17,7 +17,7 @@ public static class FearQuickMenuRules
         bool isHost,
         bool sessionEnabled)
     {
-        return configured && quickMenuOpen && (isHost || sessionEnabled);
+        return configured && quickMenuOpen;
     }
 
     /// <summary>Gets whether the local player may select a model.</summary>
@@ -127,6 +127,7 @@ public static class FearThumbnailPoseRules
     /// <summary>Applies card-only bind-pose corrections without changing world fear visuals.</summary>
     public static Quaternion ResolveCardRotation(Quaternion worldRotation, string? modelKey)
     {
+        if (modelKey != null && modelKey.StartsWith("item:", StringComparison.Ordinal)) return FearItemPoseRules.CardRotation(worldRotation, modelKey);
         return worldRotation * Quaternion.Euler(ResolveCardCorrectionEuler(modelKey));
     }
 
@@ -145,6 +146,8 @@ public static class FearThumbnailPoseRules
             return new Vector3(0f, 180f, 0f);
         }
 
+        if (modelKey == FearModelIdentityRules.BushWolf) return new Vector3(0f, 25f, 0f);
+
         if (EqualsKey(modelKey, "Centipede") || EqualsKey(modelKey, "抱脸虫"))
         {
             return new Vector3(0f, 45f, 0f);
@@ -156,6 +159,7 @@ public static class FearThumbnailPoseRules
     /// <summary>Gets a card-only orthographic-size multiplier; smaller values enlarge the model.</summary>
     public static float ResolveOrthographicScale(string? modelKey)
     {
+        if (modelKey == FearModelIdentityRules.BushWolf) return 0.72f;
         if (EqualsKey(modelKey, "MouthDog")
             || EqualsKey(modelKey, "无眼犬")
             || EqualsKey(modelKey, "无眼狗"))
@@ -238,16 +242,31 @@ public static class FearModelUiPresentationRules
     public static string ResolveDisplayName(string? modelKey, bool useChineseText)
     {
         string value = string.IsNullOrWhiteSpace(modelKey) ? FearModeRules.DefaultModelKey : modelKey.Trim();
+        if (value == FearModelIdentityRules.Ship) return useChineseText ? "迷你飞船" : "Miniature ship";
+        if (value == FearModelIdentityRules.Dropship) return useChineseText ? "补给火箭" : "Delivery rocket";
+        if (value == FearModelIdentityRules.BushWolf) return useChineseText ? "绑架狐狸" : "Bush wolf";
+        if (value.StartsWith("item:", StringComparison.Ordinal) && OriginalItemCatalog.Items.TryGetValue(value.Substring(5), out var original))
+            return OriginalItemDisplayNames.Resolve(value.Substring(5), original.Display, useChineseText);
         if (!useChineseText)
         {
             return value;
         }
 
         if (EqualsKey(value, FearModeRules.DefaultModelKey)) return "默认鬼魂";
+        if (EqualsKey(value, "Earth Leviathan")) return "大地利维坦";
+        if (EqualsKey(value, "Feiopar")) return "黑豹";
+        if (EqualsKey(value, "GiantKiwi")) return "巨型几维鸟";
+        if (EqualsKey(value, "Lasso")) return "套索人";
+        if (EqualsKey(value, "Stingray")) return "魟鱼样本";
+        if (EqualsKey(value, "Manticoil")) return "曼提线鸟";
+        if (EqualsKey(value, "Doublewing")) return "曼提线鸟";
+        if (EqualsKey(value, "Docile Locust Bees")) return "温顺蝗蜂";
+        if (EqualsKey(value, "Red Locust Bees")) return "赤色蝗蜂群";
+        if (EqualsKey(value, "Butler Bees")) return "管家蜂群";
         if (EqualsKey(value, "Centipede")) return "抱脸虫";
         if (EqualsKey(value, "Bunker Spider")) return "地堡蜘蛛";
         if (EqualsKey(value, "Hoarding bug")) return "囤积虫";
-        if (EqualsKey(value, "Flowerman")) return "布莱肯";
+        if (EqualsKey(value, "Flowerman")) return "布拉肯";
         if (EqualsKey(value, "Crawler")) return "半身鱼";
         if (EqualsKey(value, "Blob")) return "史莱姆";
         if (EqualsKey(value, "DressGirl")
@@ -256,21 +275,21 @@ public static class FearModelUiPresentationRules
             || EqualsKey(value, "女孩")) return "幽灵女孩";
         if (EqualsKey(value, "Puffer")) return "孢子蜥蜴";
         if (EqualsKey(value, "Spring")) return "弹簧头";
-        if (EqualsKey(value, "Jester")) return "小丑盒";
+        if (EqualsKey(value, "Jester")) return "八音盒";
         if (EqualsKey(value, "Nutcracker")) return "胡桃夹子";
         if (EqualsKey(value, "Masked")) return "面具人";
         if (EqualsKey(value, "Butler")) return "管家";
-        if (EqualsKey(value, "MouthDog")) return "无眼狗";
-        if (EqualsKey(value, "ForestGiant")) return "森林巨人";
+        if (EqualsKey(value, "MouthDog")) return "无眼犬";
+        if (EqualsKey(value, "ForestGiant")) return "森林守卫";
         if (EqualsKey(value, "SandWorm")) return "大地利维坦";
         if (EqualsKey(value, "Baboon hawk")) return "狒狒鹰";
-        if (EqualsKey(value, "RadMech")) return "老鸟";
-        if (EqualsKey(value, "Tulip Snake")) return "郁金香蛇";
-        if (EqualsKey(value, "Clay Surgeon")) return "理发师";
+        if (EqualsKey(value, "RadMech")) return "旧鸟机体";
+        if (EqualsKey(value, "Tulip Snake")) return "郁金香飞蛇";
+        if (EqualsKey(value, "Clay Surgeon")) return "剪发师";
         if (EqualsKey(value, "Puma") || EqualsKey(value, "Black Panther")) return "黑豹";
-        if (EqualsKey(value, FearModelPresentationRules.ManeaterBabyModelKey)) return "食人者（幼体）";
-        if (EqualsKey(value, FearModelPresentationRules.ManeaterAdultModelKey)) return "食人者（成体）";
-        if (EqualsKey(value, FearModelPresentationRules.CadaverBloomModelKey)) return "尸花";
+        if (EqualsKey(value, FearModelPresentationRules.ManeaterBabyModelKey)) return "食人兽（幼体）";
+        if (EqualsKey(value, FearModelPresentationRules.ManeaterAdultModelKey)) return "食人兽（成体）";
+        if (EqualsKey(value, FearModelPresentationRules.CadaverBloomModelKey)) return "尸生体";
         return value;
     }
 
@@ -283,6 +302,15 @@ public static class FearModelUiPresentationRules
 /// <summary>Snapshot rendered by the retained fear quick-menu view.</summary>
 public sealed class FearQuickMenuViewState
 {
+    /// <summary>Expanded catalog permission negotiated with the host.</summary>
+    public bool SupportsExpandedModels { get; set; } = true;
+    /// <summary>Whether the original delivery rocket has loaded at least once this process.</summary>
+    public bool DropshipAvailable { get; set; } = true;
+    /// <summary>Current category tab.</summary>
+    public FearModelCategory Category { get; set; }
+    /// <summary>Localized explanation when fear actions are unavailable.</summary>
+    public string StatusText { get; set; } = string.Empty;
+
     /// <summary>Creates an immutable retained-view snapshot.</summary>
     public FearQuickMenuViewState(
         IReadOnlyList<FearQuickMenuModelEntry> entries,
@@ -360,6 +388,9 @@ public sealed class FearQuickMenuViewState
 /// <summary>Actions wired once into the retained quick-menu view.</summary>
 public sealed class FearQuickMenuCallbacks
 {
+    /// <summary>Changes the retained catalog category.</summary>
+    public Action<FearModelCategory>? ChangeCategory { get; set; }
+
     /// <summary>Creates the action set wired into the retained quick-menu view.</summary>
     public FearQuickMenuCallbacks(
         Action togglePanel,

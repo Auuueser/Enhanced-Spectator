@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using EnhancedSpectator.Features.SpectatorPresence;
 using EnhancedSpectator.Logging;
+using EnhancedSpectator.GameInterop;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -10,11 +11,14 @@ namespace EnhancedSpectator.Features.FearMode;
 /// <summary>
 /// Owns one clean renderer-only runtime enemy visual.
 /// </summary>
-public sealed class RuntimeEnemyVisual : IDisposable
+public sealed partial class RuntimeEnemyVisual : IDisposable
 {
     private readonly GameObject _root;
     private readonly Transform _contentRoot;
     private readonly Renderer[] _renderers;
+    private readonly Mesh[] _ownedMeshes;
+    private readonly Vector3 _baseScale;
+    private Bounds? _fadeEnvelope;
     private Vector3 _smoothedPosition;
     private Vector3 _positionVelocity;
     private Quaternion _smoothedRotation = Quaternion.identity;
@@ -34,10 +38,13 @@ public sealed class RuntimeEnemyVisual : IDisposable
         string modelKey,
         GameObject root,
         Transform contentRoot,
-        bool runtimeRecenterPending)
+        bool runtimeRecenterPending, Mesh[]? ownedMeshes = null, Bounds? fadeEnvelope = null)
     {
+        _fadeEnvelope = fadeEnvelope;
+        _ownedMeshes = ownedMeshes ?? Array.Empty<Mesh>();
         ModelKey = modelKey ?? string.Empty;
         _root = root ?? throw new ArgumentNullException(nameof(root));
+        _baseScale = root.transform.localScale;
         _contentRoot = contentRoot ?? throw new ArgumentNullException(nameof(contentRoot));
         _renderers = root.GetComponentsInChildren<Renderer>(includeInactive: true);
         _runtimeRecenterPending = runtimeRecenterPending;
@@ -45,6 +52,25 @@ public sealed class RuntimeEnemyVisual : IDisposable
 
     /// <summary>Gets the source model key.</summary>
     public string ModelKey { get; }
+    internal (string Model, int Hierarchy, int Renderers, int Mask) ReuseKey { get; set; }
+    internal void ParkForReuse()
+    {
+        DisableCameraFade();
+        SetWatchedTarget(null, null);
+        _hasPose = _hasMotionReference = _hasNetworkSample = _hasNetworkSampleVelocity = false;
+        _positionVelocity = _networkSampleVelocity = Vector3.zero;
+        TongueMotion?.ResetForReuse();
+        SetVisible(false);
+    }
+    internal OriginalTongueVisualMotion? TongueMotion { get; set; }
+    internal FearVisualSource SnapshotSource() => new FearVisualSource(_root.transform, _root.transform,
+        forceRendererVisibility: false, normalizeRootPose: true, miniature: true);
+
+    /// <summary>Updates owner size without rebuilding the hierarchy or altering ghost/voice position.</summary>
+    public void ApplyOwnerScale(float scale)
+    {
+        if (!_disposed && _root != null) _root.transform.localScale = _baseScale * FearModelAppearanceRules.ClampScale(scale);
+    }
 
     /// <summary>Applies the visual world pose.</summary>
     public void ApplyPose(
@@ -97,6 +123,7 @@ public sealed class RuntimeEnemyVisual : IDisposable
         }
 
         TryApplyRuntimeBoundsRecenter();
+        TongueMotion?.Tick();
     }
 
     private Vector3 ResolvePredictedPosition(Vector3 position, long sampleTimestampTicks, bool motionReferenced)
@@ -213,6 +240,12 @@ public sealed class RuntimeEnemyVisual : IDisposable
         }
 
         _contentRoot.position += worldOffset;
+        if (_fadeEnvelope.HasValue)
+        {
+            var envelope = _fadeEnvelope.Value;
+            envelope.center += _root.transform.InverseTransformVector(worldOffset);
+            _fadeEnvelope = envelope;
+        }
         _runtimeRecenterPending = false;
         ModLog.Info(
             $"Fear visual runtime recentered: model={ModelKey}, offset=({worldOffset.x:0.###}, {worldOffset.y:0.###}, {worldOffset.z:0.###}).");
@@ -315,7 +348,8 @@ public sealed class RuntimeEnemyVisual : IDisposable
             return false;
         }
 
-        Shader? shader = FindThumbnailShader();
+        bool studio = FearItemPoseRules.UseStudioLighting(ModelKey);
+        Shader? shader = studio ? Shader.Find("HDRP/Lit") : FindThumbnailShader();
         if (shader == null)
         {
             reason = "no compatible unlit shader is loaded";
@@ -342,10 +376,21 @@ public sealed class RuntimeEnemyVisual : IDisposable
             Material[] previewMaterials = new Material[sourceMaterials.Length];
             for (int materialIndex = 0; materialIndex < sourceMaterials.Length; materialIndex++)
             {
-                Material preview = CreateThumbnailMaterial(
-                    sourceMaterials[materialIndex],
-                    shader,
-                    out bool copiedTexture);
+                Material source = sourceMaterials[materialIndex];
+                Material preview;
+                bool copiedTexture;
+                if (studio && source != null && source.shader == shader)
+                {
+                    preview = new Material(source);
+                    copiedTexture = ResolveSourceTexture(source) != null;
+                    ConfigureThumbnailMaterial(preview);
+                }
+                else preview = CreateThumbnailMaterial(source, shader, out copiedTexture);
+                if (studio)
+                {
+                    SetFloatIfPresent(preview, "_Metallic", 0.15f);
+                    SetFloatIfPresent(preview, "_Smoothness", 0.35f);
+                }
                 previewMaterials[materialIndex] = preview;
                 created.Add(preview);
                 if (copiedTexture)
@@ -428,6 +473,7 @@ public sealed class RuntimeEnemyVisual : IDisposable
 
         string[] propertyNames =
         {
+            "_Diffuse", // Confirmed original BushWolfMat / FurShader albedo.
             "_BaseColorMap",
             "_BaseMap",
             "_MainTex",
@@ -445,7 +491,7 @@ public sealed class RuntimeEnemyVisual : IDisposable
             }
         }
 
-        return source.mainTexture;
+        return null;
     }
 
     private static Color ResolveSourceColor(Material? source)
@@ -573,6 +619,9 @@ public sealed class RuntimeEnemyVisual : IDisposable
         }
 
         _disposed = true;
+        DisposeFadeMaterials();
+        TongueMotion?.Dispose();
+        foreach (var mesh in _ownedMeshes) if (mesh != null) UnityEngine.Object.Destroy(mesh);
         if (_root != null)
         {
             UnityEngine.Object.Destroy(_root);

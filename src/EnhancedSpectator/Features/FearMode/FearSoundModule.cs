@@ -35,6 +35,9 @@ public sealed class FearSoundModule : IFeatureModule, IRuntimeTickable, IRuntime
     private float _autoCycleResumeAt;
     private bool _localIntentPlaying;
     private bool _initialized;
+    private bool _lastReception = true;
+    private int _outputReports = 16;
+    private int _skipReports = 16;
 
     /// <summary>Creates the fear-sound module.</summary>
     public FearSoundModule(
@@ -57,6 +60,7 @@ public sealed class FearSoundModule : IFeatureModule, IRuntimeTickable, IRuntime
     public void Initialize()
     {
         _initialized = true;
+        _lastReception = _config.Camera.HearOtherFearSounds.Value;
     }
 
     /// <inheritdoc />
@@ -141,6 +145,13 @@ public sealed class FearSoundModule : IFeatureModule, IRuntimeTickable, IRuntime
             return;
         }
 
+        bool receptionChanged = _lastReception != _config.Camera.HearOtherFearSounds.Value;
+        if (receptionChanged)
+        {
+            _lastReception = _config.Camera.HearOtherFearSounds.Value;
+            if (_lastReception) _fearService.RefreshSoundReception();
+        }
+
         if (!_fearService.IsSessionEnabled || !_fearService.IsLocalRenderingEnabled)
         {
             StopAllPlaybacks();
@@ -222,6 +233,13 @@ public sealed class FearSoundModule : IFeatureModule, IRuntimeTickable, IRuntime
 
         TryContinueAutoCycle();
         ApplyNearbyPlayerLimit();
+        if (receptionChanged && _outputReports-- > 0)
+        {
+            int audible = 0;
+            foreach (var playback in _activePlaybacks)
+                if (playback.Source != null && !playback.Source.mute && playback.Source.volume > 0) audible++;
+            ModLog.Info($"Fear sound reception changed: enabled={_lastReception}, host={_fearService.IsHost}, active={_activePlaybacks.Count}, outputEnabled={audible}, configuredVolume={_config.FearSoundVolume.Value:0.###}.");
+        }
     }
 
     /// <inheritdoc />
@@ -365,10 +383,14 @@ public sealed class FearSoundModule : IFeatureModule, IRuntimeTickable, IRuntime
         StopPlayback(soundEvent.ClientId);
 
         _gameAdapter.CopyFearSoundClipsTo(soundEvent.ModelKey, _clipScratch);
-        if (soundEvent.ClipIndex < 0
-            || soundEvent.ClipIndex >= _clipScratch.Count
-            || !TryResolveWorldPosition(soundEvent.ClientId, out Vector3 position))
+        if (soundEvent.ClipIndex < 0 || soundEvent.ClipIndex >= _clipScratch.Count)
         {
+            ReportSkipped(soundEvent, "clip unavailable; count=" + _clipScratch.Count);
+            return;
+        }
+        if (!TryResolveWorldPosition(soundEvent.ClientId, out Vector3 position))
+        {
+            ReportSkipped(soundEvent, "spectator pose unavailable");
             return;
         }
 
@@ -389,14 +411,16 @@ public sealed class FearSoundModule : IFeatureModule, IRuntimeTickable, IRuntime
         source.rolloffMode = AudioRolloffMode.Logarithmic;
         source.minDistance = Mathf.Max(0.1f, _config.FearSoundMinDistance.Value);
         source.maxDistance = Mathf.Max(source.minDistance + 0.1f, _config.FearSoundMaxDistance.Value);
-        source.volume = Mathf.Clamp01(_config.FearSoundVolume.Value);
+
         source.clip = clip;
+        var output = new LethalCompanyFearAudioOutput(source);
+        ApplyOutput(output, soundEvent.ClientId, 0, 0);
         source.Play();
         _activePlaybacks.Add(new ActivePlayback(
             soundEvent.ClientId,
             soundEvent.ModelKey,
             sourceObject,
-            source,
+            source, output,
             Time.unscaledTime,
             Time.unscaledTime + (neededAudioLoad ? 1.5f : 0.15f)));
         if (_gameAdapter.TryGetLocalDeadPlayerIdentity(out ulong localClientId, out _)
@@ -407,7 +431,7 @@ public sealed class FearSoundModule : IFeatureModule, IRuntimeTickable, IRuntime
         }
 
         ModLog.Info(
-            $"Fear sound playing: client={soundEvent.ClientId}, model={soundEvent.ModelKey}, clip={clip.name}, index={soundEvent.ClipIndex + 1}/{_clipScratch.Count}, duration={clip.length:0.###}s, spatialMax={source.maxDistance:0.#}m.");
+            $"Fear sound playing: client={soundEvent.ClientId}, model={soundEvent.ModelKey}, clip={clip.name}, index={soundEvent.ClipIndex + 1}/{_clipScratch.Count}, duration={clip.length:0.###}s, spatialMax={source.maxDistance:0.#}m, reception={_config.Camera.HearOtherFearSounds.Value}, volume={source.volume:0.###}, host={_fearService.IsHost}.");
     }
 
     private void ApplyNearbyPlayerLimit()
@@ -419,7 +443,7 @@ public sealed class FearSoundModule : IFeatureModule, IRuntimeTickable, IRuntime
         {
             for (int index = 0; index < _activePlaybacks.Count; index++)
             {
-                _activePlaybacks[index].Source.mute = false;
+                ApplyOutput(_activePlaybacks[index].Output, _activePlaybacks[index].ClientId, 0, 0);
             }
 
             return;
@@ -438,6 +462,8 @@ public sealed class FearSoundModule : IFeatureModule, IRuntimeTickable, IRuntime
                 }
 
                 ActivePlayback other = _activePlaybacks[otherIndex];
+                // Muted remote sources keep their timeline, but must not steal an audible slot from our own sound.
+                if (!FearSoundRules.ShouldHear(IsLocalClient(other.ClientId), _config.Camera.HearOtherFearSounds.Value)) continue;
                 float otherDistance = (other.Source.transform.position - listenerPosition).sqrMagnitude;
                 if (otherDistance < candidateDistance
                     || (Mathf.Approximately(otherDistance, candidateDistance)
@@ -447,10 +473,19 @@ public sealed class FearSoundModule : IFeatureModule, IRuntimeTickable, IRuntime
                 }
             }
 
-            candidate.Source.mute = !FearSoundAudibilityRules.IsAudible(
-                closerPlayers,
-                maximumAudiblePlayers);
+            ApplyOutput(candidate.Output, candidate.ClientId, closerPlayers, maximumAudiblePlayers);
         }
+    }
+
+    private void ReportSkipped(FearSoundEventState soundEvent, string reason)
+    {
+        if (_skipReports-- > 0) ModLog.Info($"Fear sound not started: client={soundEvent.ClientId}, model={soundEvent.ModelKey}, reason={reason}, reception={_config.Camera.HearOtherFearSounds.Value}.");
+    }
+
+    private void ApplyOutput(IGameFearAudioOutput output, ulong clientId, int closerPlayers, int maximumAudiblePlayers)
+    {
+        FearSoundOutputController.Apply(output, _config.FearSoundVolume.Value,
+            IsLocalClient(clientId), _config.Camera.HearOtherFearSounds.Value, closerPlayers, maximumAudiblePlayers);
     }
 
     private void StopPlayback(ulong clientId)
@@ -525,7 +560,7 @@ public sealed class FearSoundModule : IFeatureModule, IRuntimeTickable, IRuntime
             ulong clientId,
             string modelKey,
             GameObject gameObject,
-            AudioSource source,
+            AudioSource source, IGameFearAudioOutput output,
             float startedAt,
             float startupGraceUntil)
         {
@@ -533,6 +568,7 @@ public sealed class FearSoundModule : IFeatureModule, IRuntimeTickable, IRuntime
             ModelKey = modelKey;
             _gameObject = gameObject;
             Source = source;
+            Output = output;
             StartedAt = startedAt;
             StartupGraceUntil = startupGraceUntil;
         }
@@ -540,6 +576,7 @@ public sealed class FearSoundModule : IFeatureModule, IRuntimeTickable, IRuntime
         public ulong ClientId { get; }
         public string ModelKey { get; }
         public AudioSource Source { get; }
+        public IGameFearAudioOutput Output { get; }
         public float StartedAt { get; }
         public float StartupGraceUntil { get; }
         public bool HasObservedPlaying { get; private set; }

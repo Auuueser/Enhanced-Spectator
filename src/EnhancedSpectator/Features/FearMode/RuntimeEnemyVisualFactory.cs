@@ -23,25 +23,40 @@ public sealed class RuntimeEnemyVisualFactory
         float scaleMultiplier,
         int visibleLayerMask,
         out RuntimeEnemyVisual? visual,
-        out string reason)
+        out string reason,
+        bool enableVisualMotion = false)
     {
-        visual = null;
-        reason = string.Empty;
+        using var build = BeginCreate(source, modelKey, targetHeight, useOriginalScale, scaleMultiplier, visibleLayerMask, enableVisualMotion);
+        while (!build.Work.Done) build.Work.Advance(double.PositiveInfinity, int.MaxValue);
+        visual = build.Work.Failure == null ? build.Take() : null;
+        reason = build.Work.Failure == null ? build.Reason : "renderer-only clone failed: " + build.Work.Failure.GetType().Name;
+        return visual != null;
+    }
+
+    internal RuntimeVisualBuild BeginCreate(FearVisualSource? source, string modelKey, float targetHeight,
+        bool useOriginalScale, float scaleMultiplier, int visibleLayerMask, bool enableVisualMotion = true) =>
+        new RuntimeVisualBuild(build => CreateSteps(build, source, modelKey, targetHeight, useOriginalScale, scaleMultiplier, visibleLayerMask, enableVisualMotion));
+
+    private static IEnumerator<bool> CreateSteps(RuntimeVisualBuild build, FearVisualSource? source, string modelKey,
+        float targetHeight, bool useOriginalScale, float scaleMultiplier, int visibleLayerMask, bool enableVisualMotion)
+    {
+        build.Reason = string.Empty;
         if (source == null)
         {
-            reason = "source root unavailable";
-            return false;
+            build.Reason = "source root unavailable";
+            yield break;
         }
 
         if (!FearModeRules.IsValidModelKey(modelKey))
         {
-            reason = "invalid model key";
-            return false;
+            build.Reason = "invalid model key";
+            yield break;
         }
 
         GameObject cleanRoot = new GameObject($"Enhanced Spectator Fear Visual {modelKey}");
         cleanRoot.SetActive(false);
         UnityEngine.Object.DontDestroyOnLoad(cleanRoot);
+        var ownedMeshes = new List<Mesh>();
         try
         {
             Transform hierarchyRoot = source.HierarchyRoot;
@@ -49,59 +64,85 @@ public sealed class RuntimeEnemyVisualFactory
             GameObject contentObject = new GameObject("Renderer Content");
             contentObject.transform.SetParent(cleanRoot.transform, worldPositionStays: false);
             Dictionary<Transform, Transform> transformMap = new Dictionary<Transform, Transform>();
-            int transformCount = 0;
-            CloneTransformHierarchy(
+            HashSet<Renderer> excludedLodRenderers = BuildExcludedLodRendererSet(rendererRoot);
+            if (source.IncludedRenderers != null)
+                foreach (var renderer in rendererRoot.GetComponentsInChildren<Renderer>(true))
+                    if (!source.IncludedRenderers.Contains(renderer)) excludedLodRenderers.Add(renderer);
+            // Tongue constraints also reference non-rendering rig objects: keep its complete hierarchy.
+            HashSet<Transform>? allowedTransforms = modelKey == "item:SeveredTongue" ? null
+                : CollectVisualTransforms(source, visibleLayerMask, excludedLodRenderers);
+            yield return false;
+            // Adult V81 has a 0.7223538 parent scale. BakeMesh(false) still folds
+            // that ancestor scale into its output; restore it only after freezing,
+            // otherwise both the baked vertices and their transform apply it.
+            foreach (bool step in CloneTransformHierarchy(
                 hierarchyRoot,
                 contentObject.transform,
                 transformMap,
-                ref transformCount,
                 isSourceRoot: true,
-                normalizeSourceRootPose: FearModelPresentationRules.ShouldNormalizeSourceRootPose(modelKey));
+                normalizeSourceRootPose: source.NormalizeRootPose || FearModelPresentationRules.ShouldNormalizeSourceRootPose(modelKey),
+                allowedTransforms, normalizeSourceScale: modelKey == FearModelPresentationRules.ManeaterAdultModelKey)) yield return step;
             ActivateRendererRootPath(rendererRoot, hierarchyRoot, transformMap);
 
-            HashSet<Renderer> excludedLodRenderers = BuildExcludedLodRendererSet(rendererRoot);
-
-            int rendererCount = 0;
             if (!source.SkinnedMeshOnly)
             {
-                CopyMeshRenderers(
+                foreach (bool step in CopyMeshRenderers(
                     rendererRoot,
                     transformMap,
                     excludedLodRenderers,
                     visibleLayerMask,
-                    source.ForceRendererVisibility,
-                    ref rendererCount);
+                    source.ForceRendererVisibility)) yield return step;
             }
-            CopySkinnedMeshRenderers(
+            foreach (bool step in CopySkinnedMeshRenderers(
                 rendererRoot,
                 transformMap,
                 excludedLodRenderers,
                 visibleLayerMask,
-                source.ForceRendererVisibility,
-                ref rendererCount);
+                source.ForceRendererVisibility)) yield return step;
+            int rendererCount = cleanRoot.GetComponentsInChildren<Renderer>(true).Length;
             if (rendererCount == 0)
             {
-                reason = "source contains no supported mesh renderers";
-                UnityEngine.Object.Destroy(cleanRoot);
-                return false;
+                build.Reason = "source contains no supported mesh renderers";
+                yield break;
             }
 
             if (!ContainsOnlyAllowedComponents(cleanRoot, out string forbiddenType))
             {
-                reason = $"clean hierarchy unexpectedly contains forbidden component {forbiddenType}";
-                UnityEngine.Object.Destroy(cleanRoot);
-                return false;
+                build.Reason = $"clean hierarchy unexpectedly contains forbidden component {forbiddenType}";
+                yield break;
             }
 
+            yield return false; // Bounds/baking runs in its own slice, never interleaved with rendering.
             cleanRoot.SetActive(true);
+            bool freezePose = modelKey == FearModelIdentityRules.BushWolf || modelKey == FearModelPresentationRules.ManeaterAdultModelKey;
+            if (freezePose)
+            {
+                // Freeze renderer-only poses whose imported skin/culling frames disagree. The
+                // displayed mesh and fade envelope now use the very same baked vertices.
+                foreach (var skin in cleanRoot.GetComponentsInChildren<SkinnedMeshRenderer>())
+                {
+                    if (!skin.enabled || skin.forceRenderingOff || skin.sharedMesh == null) continue;
+                    var mesh = new Mesh { name = "Enhanced Spectator frozen pose " + modelKey };
+                    ownedMeshes.Add(mesh);
+                    skin.BakeMesh(mesh, false);
+                    mesh.RecalculateBounds();
+                    skin.gameObject.AddComponent<MeshFilter>().sharedMesh = mesh;
+                    var renderer = skin.gameObject.AddComponent<MeshRenderer>();
+                    renderer.sharedMaterials = skin.sharedMaterials;
+                    renderer.shadowCastingMode = skin.shadowCastingMode;
+                    renderer.receiveShadows = skin.receiveShadows;
+                    skin.enabled = false;
+                }
+            }
+            if (modelKey == FearModelPresentationRules.ManeaterAdultModelKey)
+                transformMap[hierarchyRoot].localScale = hierarchyRoot.localScale;
             bool hasBounds = source.UseMeshBoundsForNormalization
                 ? TryGetCombinedMeshBounds(cleanRoot, out Bounds visibleBounds)
                 : TryGetCombinedVisibleBounds(cleanRoot, out visibleBounds);
             if (!hasBounds)
             {
-                reason = "clean hierarchy contains no active visible renderer bounds";
-                UnityEngine.Object.Destroy(cleanRoot);
-                return false;
+                build.Reason = "clean hierarchy contains no active visible renderer bounds";
+                yield break;
             }
 
             Vector3 localCenter = cleanRoot.transform.InverseTransformPoint(visibleBounds.center);
@@ -111,31 +152,70 @@ public sealed class RuntimeEnemyVisualFactory
                 targetHeight,
                 visibleBounds.size.y,
                 scaleMultiplier);
+            if (source.Miniature) uniformScale = FearModelIdentityRules.MiniatureScale(visibleBounds.size.x, visibleBounds.size.y, visibleBounds.size.z, scaleMultiplier);
             cleanRoot.transform.localScale = Vector3.one * uniformScale;
             cleanRoot.SetActive(false);
-            bool runtimeRecenter = FearModelPresentationRules.ShouldRecenterFromRuntimeBounds(modelKey);
-            reason = $"renderers={rendererCount}, sourceHeight={visibleBounds.size.y:0.###}, originalScale={useOriginalScale}, scale={uniformScale:0.###}, centeredFrom={localCenter}, runtimeRecenter={runtimeRecenter}";
-            visual = new RuntimeEnemyVisual(modelKey, cleanRoot, contentObject.transform, runtimeRecenter);
-            return true;
+            bool runtimeRecenter = !freezePose && FearModelPresentationRules.ShouldRecenterFromRuntimeBounds(modelKey);
+            build.Reason = $"renderers={rendererCount}, transforms={transformMap.Count}, frozenPose={freezePose}, sourceHeight={visibleBounds.size.y:0.###}, originalScale={useOriginalScale}, scale={uniformScale:0.###}, centeredFrom={localCenter}, runtimeRecenter={runtimeRecenter}";
+            var completed = new RuntimeEnemyVisual(modelKey, cleanRoot, contentObject.transform, runtimeRecenter, ownedMeshes.ToArray(), new Bounds(Vector3.zero, visibleBounds.size));
+            if (enableVisualMotion && modelKey == "item:SeveredTongue")
+                completed.TongueMotion = OriginalTongueVisualMotion.Create(hierarchyRoot, transformMap);
+            build.Visual = completed;
+            yield break;
         }
-        catch (Exception ex)
+        finally
         {
-            reason = $"renderer-only clone failed: {ex.GetType().Name}";
-            UnityEngine.Object.Destroy(cleanRoot);
-            return false;
+            if (build.Visual == null)
+            {
+                foreach (var mesh in ownedMeshes) UnityEngine.Object.Destroy(mesh);
+                UnityEngine.Object.Destroy(cleanRoot);
+            }
         }
     }
 
-    private static void CloneTransformHierarchy(
+    private static HashSet<Transform> CollectVisualTransforms(FearVisualSource source, int mask, HashSet<Renderer> excluded)
+    {
+        var result = new HashSet<Transform> { source.HierarchyRoot };
+        void Include(Transform current)
+        {
+            while (current != null && current != source.HierarchyRoot)
+            {
+                if (!result.Add(current)) break;
+                current = current.parent;
+            }
+        }
+        Include(source.RendererRoot);
+        foreach (var renderer in source.RendererRoot.GetComponentsInChildren<Renderer>(true))
+        {
+            if (excluded.Contains(renderer) || !IsLayerVisible(renderer.gameObject.layer, mask)
+                || (!source.ForceRendererVisibility && (!renderer.enabled || renderer.forceRenderingOff
+                    || !IsActiveWithinSourceRoot(renderer.transform, source.RendererRoot)))) continue;
+            if (renderer is SkinnedMeshRenderer skin)
+            {
+                if (skin.sharedMesh == null) continue;
+                Include(skin.transform);
+                if (skin.rootBone != null) Include(skin.rootBone);
+                foreach (var bone in skin.bones) if (bone != null) Include(bone);
+            }
+            else if (!source.SkinnedMeshOnly && renderer is MeshRenderer)
+            {
+                var filter = renderer.GetComponent<MeshFilter>();
+                if (filter != null && filter.sharedMesh != null) Include(renderer.transform);
+            }
+        }
+        return result;
+    }
+
+    private static IEnumerable<bool> CloneTransformHierarchy(
         Transform source,
         Transform cleanParent,
         Dictionary<Transform, Transform> transformMap,
-        ref int transformCount,
         bool isSourceRoot,
-        bool normalizeSourceRootPose)
+        bool normalizeSourceRootPose,
+        HashSet<Transform>? allowedTransforms, bool normalizeSourceScale = false)
     {
-        transformCount++;
-        if (transformCount > MaxTransformCount)
+        if (allowedTransforms != null && !allowedTransforms.Contains(source)) yield break;
+        if (transformMap.Count >= MaxTransformCount)
         {
             throw new InvalidOperationException("enemy visual hierarchy exceeds transform safety cap");
         }
@@ -148,28 +228,27 @@ public sealed class RuntimeEnemyVisualFactory
         bool normalizePose = isSourceRoot && normalizeSourceRootPose;
         clone.localPosition = normalizePose ? Vector3.zero : source.localPosition;
         clone.localRotation = normalizePose ? Quaternion.identity : source.localRotation;
-        clone.localScale = source.localScale;
+        clone.localScale = isSourceRoot && normalizeSourceScale ? Vector3.one : source.localScale;
         transformMap[source] = clone;
+        yield return true;
 
         for (int childIndex = 0; childIndex < source.childCount; childIndex++)
         {
-            CloneTransformHierarchy(
+            foreach (bool step in CloneTransformHierarchy(
                 source.GetChild(childIndex),
                 clone,
                 transformMap,
-                ref transformCount,
                 isSourceRoot: false,
-                normalizeSourceRootPose);
+                normalizeSourceRootPose, allowedTransforms)) yield return step;
         }
     }
 
-    private static void CopyMeshRenderers(
+    private static IEnumerable<bool> CopyMeshRenderers(
         Transform sourceRoot,
         Dictionary<Transform, Transform> transformMap,
         HashSet<Renderer> excludedLodRenderers,
         int visibleLayerMask,
-        bool forceRendererVisibility,
-        ref int rendererCount)
+        bool forceRendererVisibility)
     {
         MeshFilter[] sourceFilters = sourceRoot.GetComponentsInChildren<MeshFilter>(includeInactive: true);
         for (int index = 0; index < sourceFilters.Length; index++)
@@ -199,7 +278,7 @@ public sealed class RuntimeEnemyVisualFactory
             cleanFilter.sharedMesh = sourceMesh;
             cleanRenderer.sharedMaterials = sourceRenderer.sharedMaterials;
             ConfigureRenderer(cleanRenderer, sourceRenderer, forceRendererVisibility);
-            rendererCount++;
+            yield return true;
         }
     }
 
@@ -241,13 +320,12 @@ public sealed class RuntimeEnemyVisualFactory
         }
     }
 
-    private static void CopySkinnedMeshRenderers(
+    private static IEnumerable<bool> CopySkinnedMeshRenderers(
         Transform sourceRoot,
         Dictionary<Transform, Transform> transformMap,
         HashSet<Renderer> excludedLodRenderers,
         int visibleLayerMask,
-        bool forceRendererVisibility,
-        ref int rendererCount)
+        bool forceRendererVisibility)
     {
         SkinnedMeshRenderer[] sourceRenderers =
             sourceRoot.GetComponentsInChildren<SkinnedMeshRenderer>(includeInactive: true);
@@ -302,7 +380,7 @@ public sealed class RuntimeEnemyVisualFactory
             cleanRenderer.localBounds = sourceRenderer.localBounds;
             cleanRenderer.updateWhenOffscreen = false;
             ConfigureRenderer(cleanRenderer, sourceRenderer, forceRendererVisibility);
-            rendererCount++;
+            yield return true;
         }
     }
 
@@ -396,90 +474,8 @@ public sealed class RuntimeEnemyVisualFactory
         return hasBounds && bounds.size.y > 0.001f;
     }
 
-    private static bool TryGetCombinedMeshBounds(GameObject root, out Bounds bounds)
-    {
-        bounds = default;
-        bool hasBounds = false;
-        MeshFilter[] meshFilters = root.GetComponentsInChildren<MeshFilter>(includeInactive: false);
-        for (int index = 0; index < meshFilters.Length; index++)
-        {
-            MeshFilter filter = meshFilters[index];
-            if (filter.sharedMesh != null)
-            {
-                EncapsulateTransformedBounds(
-                    filter.sharedMesh.bounds,
-                    filter.transform.localToWorldMatrix,
-                    ref bounds,
-                    ref hasBounds);
-            }
-        }
-
-        SkinnedMeshRenderer[] skinnedRenderers =
-            root.GetComponentsInChildren<SkinnedMeshRenderer>(includeInactive: false);
-        for (int index = 0; index < skinnedRenderers.Length; index++)
-        {
-            SkinnedMeshRenderer renderer = skinnedRenderers[index];
-            if (renderer.sharedMesh != null && renderer.enabled && !renderer.forceRenderingOff)
-            {
-                Mesh bakedMesh = new Mesh();
-                Bounds skinnedBounds = renderer.sharedMesh.bounds;
-                try
-                {
-                    renderer.BakeMesh(bakedMesh);
-                    if (bakedMesh.vertexCount > 0)
-                    {
-                        skinnedBounds = bakedMesh.bounds;
-                    }
-                }
-                catch (Exception)
-                {
-                    // Some imported meshes cannot be baked before their animator runs; retain the safe shared-mesh fallback.
-                }
-                finally
-                {
-                    UnityEngine.Object.Destroy(bakedMesh);
-                }
-
-                EncapsulateTransformedBounds(
-                    skinnedBounds,
-                    renderer.transform.localToWorldMatrix,
-                    ref bounds,
-                    ref hasBounds);
-            }
-        }
-
-        return hasBounds && bounds.size.y > 0.001f;
-    }
-
-    private static void EncapsulateTransformedBounds(
-        Bounds localBounds,
-        Matrix4x4 localToWorld,
-        ref Bounds combined,
-        ref bool hasBounds)
-    {
-        Vector3 center = localBounds.center;
-        Vector3 extents = localBounds.extents;
-        for (int x = -1; x <= 1; x += 2)
-        {
-            for (int y = -1; y <= 1; y += 2)
-            {
-                for (int z = -1; z <= 1; z += 2)
-                {
-                    Vector3 corner = center + Vector3.Scale(extents, new Vector3(x, y, z));
-                    Vector3 worldCorner = localToWorld.MultiplyPoint3x4(corner);
-                    if (!hasBounds)
-                    {
-                        combined = new Bounds(worldCorner, Vector3.zero);
-                        hasBounds = true;
-                    }
-                    else
-                    {
-                        combined.Encapsulate(worldCorner);
-                    }
-                }
-            }
-        }
-    }
+    private static bool TryGetCombinedMeshBounds(GameObject root, out Bounds bounds) =>
+        VisualPoseBounds.TryCapture(root.GetComponentsInChildren<Renderer>(false), Matrix4x4.identity, out bounds);
 
     private static bool ContainsOnlyAllowedComponents(GameObject root, out string forbiddenType)
     {

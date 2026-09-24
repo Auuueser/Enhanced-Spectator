@@ -17,6 +17,12 @@ public sealed class SpectatorLifecyclePatchModule : IPatchModule
     /// <inheritdoc />
     public void Register(Harmony harmony)
     {
+        harmony.CreateClassProcessor(typeof(NativeFadeCameraPatch)).Patch();
+        harmony.CreateClassProcessor(typeof(NativeFadeOtherPassPatch)).Patch();
+        harmony.CreateClassProcessor(typeof(SpectatorCanvasSubmissionPatch)).Patch();
+        harmony.CreateClassProcessor(typeof(SpectatorToolPosePatch)).Patch();
+        harmony.CreateClassProcessor(typeof(SpectatorLookPosePatch)).Patch();
+        harmony.CreateClassProcessor(typeof(SpectatorCollisionPatch)).Patch();
         harmony.CreateClassProcessor(typeof(PlayerKillPatch)).Patch();
         harmony.CreateClassProcessor(typeof(SpectatedPlayerEffectsPatch)).Patch();
         harmony.CreateClassProcessor(typeof(SwitchCameraPatch)).Patch();
@@ -32,6 +38,29 @@ public sealed class SpectatorLifecyclePatchModule : IPatchModule
     public void Unregister(Harmony harmony)
     {
         _ = harmony;
+    }
+
+    [HarmonyPatch(typeof(PlayerControllerB), nameof(PlayerControllerB.RaycastSpectateCameraAroundPivot))]
+    private static class SpectatorCollisionPatch
+    {
+        private static int _nextDiagnosticFrame;
+        private static bool Prefix(PlayerControllerB __instance)
+        {
+            bool owned = SpectatorFreecamController.Current?.OwnsCamera == true
+                && IsLocalSpectatorContext(__instance)
+                && RuntimeConnectionState.CanRunLocalDiagnostics(out _)
+                && StartOfRound.Instance != null && !StartOfRound.Instance.overrideSpectateCamera
+                && __instance.isInGameOverAnimation <= 0f;
+            if (owned && ModLog.IsDebugEnabled && Time.frameCount >= _nextDiagnosticFrame)
+            {
+                _nextDiagnosticFrame = Time.frameCount + 300;
+                ModLog.Debug("Enhanced camera owns pose; skipped vanilla obstacle camera write.");
+            }
+            if (!owned && RuntimeConnectionState.CanRunLocalDiagnostics(out _)
+                && SpectatorFreecamController.Current?.TryGetVanillaDistance(out float distance) == true
+                && GameInterop.LethalCompanyVanillaDistance.TryApply(__instance, distance)) return false;
+            return !owned;
+        }
     }
 
     [HarmonyPatch(

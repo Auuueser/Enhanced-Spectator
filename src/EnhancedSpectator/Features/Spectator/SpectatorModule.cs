@@ -267,6 +267,7 @@ public sealed class SpectatorModule :
             return;
         }
 
+        _freecamController.Dispose();
         _initialized = false;
         SpectatorLifecycleEvents.Changed -= OnSpectatorLifecycleChanged;
         Current = SpectatorState.Unavailable;

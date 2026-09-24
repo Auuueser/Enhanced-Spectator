@@ -10,6 +10,12 @@ public sealed class SpectatorFreecamSettings
 {
     private readonly EnhancedSpectatorConfig _config;
 
+    /// <summary>Local camera controls.</summary>
+    public SpectatorCameraConfig Camera => _config.Camera;
+
+    /// <summary>Persists live third-person distance.</summary>
+    public void SetThirdPersonDistance(float value) => _config.ThirdPersonDistance.Value = value;
+
     /// <summary>
     /// Creates a settings facade over BepInEx config entries.
     /// </summary>

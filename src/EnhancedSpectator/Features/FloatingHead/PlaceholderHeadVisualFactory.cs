@@ -339,6 +339,8 @@ public sealed class PlaceholderHeadVisualFactory : IDisposable
         material.EnableKeyword("_DOUBLESIDED_ON");
         material.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
         material.EnableKeyword("_ALPHABLEND_ON");
+        if (material.shader != null && material.shader.name.StartsWith("HDRP/", StringComparison.Ordinal))
+            EnhancedSpectator.GameInterop.LethalCompanyPlaceholderMaterial.Configure(material, enableDepthTest);
     }
 
     private static Mesh CreateBillboardMesh()
