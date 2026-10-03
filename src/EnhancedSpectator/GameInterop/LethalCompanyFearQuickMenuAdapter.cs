@@ -151,8 +151,8 @@ public sealed partial class LethalCompanyFearQuickMenuAdapter : IGameFearQuickMe
         SetText(
             _renderText,
             chinese
-                ? $"显示模型：{OnOff(state.LocalRenderingEnabled, true)}"
-                : $"SHOW MODELS: {OnOff(state.LocalRenderingEnabled, false)}");
+                ? $"恐惧外观：{OnOff(state.LocalRenderingEnabled, true)}"
+                : $"FEAR APPEARANCES: {OnOff(state.LocalRenderingEnabled, false)}");
         SetText(
             _soundText,
             chinese
@@ -189,6 +189,14 @@ public sealed partial class LethalCompanyFearQuickMenuAdapter : IGameFearQuickMe
         // Page visibility is applied last so shared host controls cannot reappear over camera rows.
         RenderOptions(state);
         if (_optionsOpen) return;
+        if (!FearQuickMenuRules.PreparePageThumbnails(state.Entries, state.PageIndex, _thumbnails))
+        {
+            // Keep the previous completed page intact; a new view starts with hidden cards.
+            // Never publish nine generic icons and then replace them one by one.
+            SetText(_selectedText, chinese ? "正在准备模型预览…" : "Preparing model previews…");
+            foreach (ModelCard card in _cards) card.SetInteractable(false);
+            return;
+        }
         int firstIndex = state.PageIndex * FearQuickMenuRules.PageSize;
         for (int slotIndex = 0; slotIndex < _cards.Length; slotIndex++)
         {
@@ -201,7 +209,6 @@ public sealed partial class LethalCompanyFearQuickMenuAdapter : IGameFearQuickMe
             }
 
             FearQuickMenuModelEntry entry = state.Entries[entryIndex];
-            _thumbnails.Request(entry.ModelKey);
             _thumbnails.TryGet(entry.ModelKey, out Sprite? thumbnail);
             bool pendingDropship = entry.ModelKey == FearModelIdentityRules.Dropship && !state.DropshipAvailable;
             card.Set(
@@ -211,6 +218,15 @@ public sealed partial class LethalCompanyFearQuickMenuAdapter : IGameFearQuickMe
                 !pendingDropship && state.CanSelectModels && (state.SupportsExpandedModels || !FearModelIdentityRules.IsExpanded(entry.ModelKey)),
                 thumbnail);
         }
+        // Warm adjacent pages first, then the rest of this category, only while this menu is open.
+        // The bounded queue and shared four-frame render schedule still control expensive work.
+        int nextFirst = firstIndex + FearQuickMenuRules.PageSize;
+        int previousFirst = Math.Max(0, firstIndex - FearQuickMenuRules.PageSize);
+        for (int index = nextFirst; index < state.Entries.Count && index < nextFirst + FearQuickMenuRules.PageSize; index++)
+            _thumbnails.Prefetch(state.Entries[index].ModelKey);
+        for (int index = previousFirst; index < firstIndex; index++)
+            _thumbnails.Prefetch(state.Entries[index].ModelKey);
+        foreach (FearQuickMenuModelEntry entry in state.Entries) _thumbnails.Prefetch(entry.ModelKey);
     }
 
     /// <inheritdoc />
@@ -312,6 +328,7 @@ public sealed partial class LethalCompanyFearQuickMenuAdapter : IGameFearQuickMe
             SetTopLeft((RectTransform)label.transform, 64f, 8f, 84f, 50f);
             ModelCard card = new ModelCard(cardObject, cardButton, icon, label);
             _cards[index] = card;
+            card.Set(null, null, false, false, null);
             cardButton.onClick.AddListener(() =>
             {
                 if (!string.IsNullOrWhiteSpace(card.ModelKey))
@@ -611,6 +628,8 @@ public sealed partial class LethalCompanyFearQuickMenuAdapter : IGameFearQuickMe
 
         public string? ModelKey { get; private set; }
 
+        public void SetInteractable(bool enabled) => _button.interactable = enabled;
+
         public void Set(
             string? modelKey,
             string? displayName,
@@ -636,6 +655,7 @@ public sealed partial class LethalCompanyFearQuickMenuAdapter : IGameFearQuickMe
                 ? new Color(0.78f, 0.32f, 0.08f, 1f)
                 : new Color(0.20f, 0.12f, 0.08f, 0.96f);
             _icon.sprite = icon;
+            _icon.enabled = icon != null;
             SetText(_label, displayName ?? modelKey!);
         }
     }

@@ -199,7 +199,9 @@ public sealed class SpectatorModule :
                 motionReferenceLocalRotation,
                 hasTargetMotionReference,
                 targetMotionReferenceLocalPosition,
-                targetMotionReferenceLocalRotation);
+                targetMotionReferenceLocalRotation,
+                modelStowed: hasPose && useFreecamPose && _freecamController.State.ModelStowed,
+                autoCentering: hasPose && useFreecamPose && _freecamController.IsAutoCentering);
             return true;
         }
 

@@ -8,7 +8,7 @@ namespace EnhancedSpectator.GameInterop;
 /// <summary>
 /// Reads confirmed Lethal Company spectator state through direct game member access.
 /// </summary>
-public sealed class LethalCompanySpectatorAdapter :
+public sealed partial class LethalCompanySpectatorAdapter :
     IGameSpectatorAdapter,
     IGameShipMotionStateAdapter,
     IGameSpectatedTargetMotionReferenceAdapter,
@@ -28,6 +28,9 @@ public sealed class LethalCompanySpectatorAdapter :
 
     /// <inheritdoc />
     public bool IsCameraInputBlocked()
+        => SpectatorPointerCapture.IsActive || IsUiInputBlocked();
+
+    internal bool IsUiInputBlocked()
     {
         var local = GetLocalPlayer();
         if (IsLocalQuickMenuOpen() || (local != null && local.isTypingChat)) return true;

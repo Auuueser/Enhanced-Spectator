@@ -17,12 +17,12 @@ internal static class CinematicShotPath
     private static readonly float[] Heights = { .55f, .42f, 1.05f, 2.8f, 3.4f, 1.8f, .58f, 1.1f };
     private static readonly float[] Focus = { 1.15f, 1.28f, 1.15f, 1f, .95f, 1.15f, 1.3f, 1.15f };
     private static readonly float[] Composition = { -.10f, .04f, .12f, .04f, -.10f, -.12f, -.04f, .08f };
-    internal static double Advance(double phase, float speed, float elapsed)
+    internal static double Advance(double phase, float speed, float elapsed, float tempo = 1f)
     {
         if (double.IsNaN(phase) || double.IsInfinity(phase)) phase = 0;
         if (float.IsNaN(speed) || float.IsInfinity(speed)) speed = 8;
         if (float.IsNaN(elapsed) || float.IsInfinity(elapsed) || elapsed <= 0) return phase;
-        return (phase + Math.Max(0, Math.Min(30, speed)) * Math.Min(.1, elapsed)) % 360;
+        return (phase + Math.Max(0, Math.Min(30, speed)) * Math.Max(.1f, Math.Min(2f, tempo)) * Math.Min(.1, elapsed)) % 360;
     }
     internal static Shot Sample(double phase)
     {

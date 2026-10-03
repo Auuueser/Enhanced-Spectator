@@ -247,7 +247,7 @@ public sealed partial class RuntimeEnemyVisual : IDisposable
             _fadeEnvelope = envelope;
         }
         _runtimeRecenterPending = false;
-        ModLog.Info(
+        ModLog.Debug(
             $"Fear visual runtime recentered: model={ModelKey}, offset=({worldOffset.x:0.###}, {worldOffset.y:0.###}, {worldOffset.z:0.###}).");
     }
 
@@ -606,6 +606,12 @@ public sealed partial class RuntimeEnemyVisual : IDisposable
     {
         if (!_disposed && _root != null && _root.activeSelf != visible)
         {
+            if (!visible)
+            {
+                DisableCameraFade();
+                _hasPose = _hasNetworkSample = _hasNetworkSampleVelocity = _hasMotionReference = false;
+                _positionVelocity = Vector3.zero;
+            }
             _root.SetActive(visible);
         }
     }

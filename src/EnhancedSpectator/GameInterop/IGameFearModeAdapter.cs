@@ -3,6 +3,13 @@ using UnityEngine;
 
 namespace EnhancedSpectator.GameInterop;
 
+/// <summary>Optional lifecycle invalidation and bounded preparation of original catalog resources.</summary>
+internal interface IGameFearCatalogPreparationAdapter
+{
+    void InvalidateCatalogSources();
+    void TickCatalogPreparation();
+}
+
 /// <summary>
 /// Isolates confirmed Lethal Company state used by fear-mode selection and render sources.
 /// </summary>

@@ -5,6 +5,14 @@ namespace EnhancedSpectator.GameInterop;
 /// <summary>Limits local model fading to the player's actual view, excluding thumbnails and ship monitors.</summary>
 public static class LethalCompanyFearViewCamera
 {
+    internal static bool ShouldFadeTarget(Config.SpectatorCameraConfig config, ulong? clientId, ulong? slotId)
+    {
+        var local = StartOfRound.Instance != null ? StartOfRound.Instance.localPlayerController : null;
+        return local != null && Features.FearMode.FearModelAppearanceRules.ShouldFadeForTarget(
+            config.FadeModelsNearby.Value, local.isPlayerDead, config.FadeModelsWhileSpectating.Value,
+            config.FadeModelsNearOtherPlayers.Value, local.actualClientId, local.playerClientId, clientId, slotId);
+    }
+
     internal static bool ShouldFade(Config.SpectatorCameraConfig config) =>
         Features.FearMode.FearModelAppearanceRules.ShouldFade(config.FadeModelsNearby.Value,
             StartOfRound.Instance != null && StartOfRound.Instance.localPlayerController != null

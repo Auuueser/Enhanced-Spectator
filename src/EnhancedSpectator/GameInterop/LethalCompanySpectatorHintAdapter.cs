@@ -41,6 +41,7 @@ internal sealed class LethalCompanySpectatorHintAdapter : IGameSpectatorHudAdapt
             && !local.isTypingChat && !round.localPlayerUsingController;
         _root.gameObject.SetActive(visible);
         if (!visible) { _nextRefresh = 0; return; }
+        LethalCompanySpectatorRosterAdapter.KeepAboveKeyHints();
         if (Time.frameCount < _nextRefresh) return;
         _nextRefresh = Time.frameCount + 6;
         var controller = SpectatorFreecamController.Current;

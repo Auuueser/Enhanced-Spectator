@@ -18,13 +18,19 @@ public sealed class SpectatorLifecyclePatchModule : IPatchModule
     public void Register(Harmony harmony)
     {
         harmony.CreateClassProcessor(typeof(NativeFadeCameraPatch)).Patch();
+        harmony.CreateClassProcessor(typeof(SpectatorPresentationPatch)).Patch();
+        harmony.CreateClassProcessor(typeof(SpectatorPresentationFramesPatch)).Patch();
         harmony.CreateClassProcessor(typeof(NativeFadeOtherPassPatch)).Patch();
+        harmony.CreateClassProcessor(typeof(NativeFadeLightingCapturePatch)).Patch();
+        harmony.CreateClassProcessor(typeof(NativeFadeLightingRetentionPatch)).Patch();
         harmony.CreateClassProcessor(typeof(SpectatorCanvasSubmissionPatch)).Patch();
         harmony.CreateClassProcessor(typeof(SpectatorToolPosePatch)).Patch();
         harmony.CreateClassProcessor(typeof(SpectatorLookPosePatch)).Patch();
         harmony.CreateClassProcessor(typeof(SpectatorCollisionPatch)).Patch();
         harmony.CreateClassProcessor(typeof(PlayerKillPatch)).Patch();
         harmony.CreateClassProcessor(typeof(SpectatedPlayerEffectsPatch)).Patch();
+        harmony.CreateClassProcessor(typeof(SpectatorInteriorCullingPatch)).Patch();
+        harmony.CreateClassProcessor(typeof(SpectatorInteriorRefreshPatch)).Patch();
         harmony.CreateClassProcessor(typeof(SwitchCameraPatch)).Patch();
         harmony.CreateClassProcessor(typeof(GameOverSpectateModePatch)).Patch();
         harmony.CreateClassProcessor(typeof(ReviveDeadPlayersPatch)).Patch();
@@ -32,6 +38,27 @@ public sealed class SpectatorLifecyclePatchModule : IPatchModule
         harmony.CreateClassProcessor(typeof(SpectateNextPlayerPatch)).Patch();
         harmony.CreateClassProcessor(typeof(InteractPerformedPatch)).Patch();
         harmony.CreateClassProcessor(typeof(ActivateItemPerformedPatch)).Patch();
+        harmony.CreateClassProcessor(typeof(SpectatorPointerLookPatch)).Patch();
+    }
+
+    [HarmonyPatch(typeof(PlayerControllerB), nameof(PlayerControllerB.PlayerLookInput))]
+    private static class SpectatorPointerLookPatch
+    {
+        private static bool Prefix(PlayerControllerB __instance) => !GameInterop.LethalCompanySpectatorRosterCursor.BlocksLook(__instance);
+    }
+
+    [HarmonyPatch(typeof(AdjacentRoomCullingModified), nameof(AdjacentRoomCullingModified.LateUpdate))]
+    private static class SpectatorInteriorCullingPatch
+    {
+        private static void Postfix(AdjacentRoomCullingModified __instance) =>
+            GameInterop.SpectatorInteriorVisibility.Refresh(__instance);
+    }
+
+    [HarmonyPatch(typeof(AdjacentRoomCullingModified), nameof(AdjacentRoomCullingModified.RefreshVisibility))]
+    private static class SpectatorInteriorRefreshPatch
+    {
+        private static void Postfix(AdjacentRoomCullingModified __instance) =>
+            GameInterop.SpectatorInteriorVisibility.AfterVanillaRefresh(__instance);
     }
 
     /// <inheritdoc />
@@ -88,6 +115,7 @@ public sealed class SpectatorLifecyclePatchModule : IPatchModule
         {
             if (IsLocalSpectatorContext(__instance))
             {
+                GameInterop.SpectatorInteriorVisibility.TargetChanged();
                 SpectatorLifecycleEvents.Raise(SpectatorLifecycleEventKind.SpectatedPlayerEffectsApplied);
             }
         }
@@ -211,8 +239,9 @@ public sealed class SpectatorLifecyclePatchModule : IPatchModule
         private static int _nextSuppressDebugFrame;
         private static int _nextUnsafeDebugFrame;
 
-        private static bool Prefix(PlayerControllerB __instance)
+        private static bool Prefix(PlayerControllerB __instance, bool __0, out bool __state)
         {
+            __state = false;
             if (!TryGetLocalDeadSpectatorContext(__instance, out string contextReason))
             {
                 if (contextReason.Length > 0 && Time.frameCount >= _nextUnsafeDebugFrame)
@@ -238,18 +267,18 @@ public sealed class SpectatorLifecyclePatchModule : IPatchModule
                 return false;
             }
 
-            if (!TryGetLocalSpectatorContext(__instance, out string skipReason))
+            bool hasSpectatorContext = TryGetLocalSpectatorContext(__instance, out string skipReason);
+            if (!hasSpectatorContext)
             {
                 if (skipReason.Length > 0 && Time.frameCount >= _nextUnsafeDebugFrame)
                 {
                     _nextUnsafeDebugFrame = Time.frameCount + 120;
                     ModLog.Debug($"Vanilla spectator target switch suppression skipped: {skipReason}.");
                 }
-
-                return true;
             }
 
-            if (SpectatorVanillaInputGuard.ShouldSuppressTargetSwitchInput(out string suppressionReason))
+            if (hasSpectatorContext && SpectatorVanillaInputGuard.ShouldSuppressTargetSwitchInput(out string suppressionReason,
+                __instance.spectatedPlayerScript == null || __instance.spectatedPlayerScript.isPlayerDead))
             {
                 if (Time.frameCount >= _nextSuppressDebugFrame)
                 {
@@ -263,7 +292,14 @@ public sealed class SpectatorLifecyclePatchModule : IPatchModule
                 return false;
             }
 
+            SpectatorFreecamController.Current?.BeginVanillaTargetSwitch(__0);
+            __state = true;
             return true;
+        }
+
+        private static void Postfix(bool __0, bool __state)
+        {
+            if (__state) SpectatorFreecamController.Current?.EndVanillaTargetSwitch(__0);
         }
 
         private static bool TryGetLocalDeadSpectatorContext(PlayerControllerB player, out string reason)
@@ -455,7 +491,7 @@ public sealed class SpectatorLifecyclePatchModule : IPatchModule
             return false;
         }
 
-        reason = "quick menu is open";
+        reason = SpectatorPointerCapture.IsActive ? "viewer-list pointer is active" : "quick menu is open";
         return true;
     }
 

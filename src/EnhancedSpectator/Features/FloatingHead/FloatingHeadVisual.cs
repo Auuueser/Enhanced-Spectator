@@ -283,11 +283,14 @@ public sealed partial class FloatingHeadVisual : IDisposable
         bool motionReferenced,
         SpectatorMotionReferencePose motionReference)
     {
-        RestoreHeadFade();
         if (_disposed || _gameObject == null)
         {
             return;
         }
+
+        // Pre-cull pose refreshes must not release another callback's fade
+        // ownership. Camera begin/end and explicit hiding own that lifetime.
+        ObserveIsolatedPoseUpdate();
 
         position = ResolvePredictedPosition(
             position,
@@ -483,7 +486,8 @@ public sealed partial class FloatingHeadVisual : IDisposable
             return;
         }
 
-        SetLayerRecursive(_gameObject.transform, layer);
+        if (_headFade != null) _headFade.SetLayer(_gameObject.transform, layer);
+        else SetLayerRecursive(_gameObject.transform, layer);
         _currentLayer = layer;
 
         _nameTag?.SetLayer(layer);
@@ -501,6 +505,13 @@ public sealed partial class FloatingHeadVisual : IDisposable
 
         if (_gameObject.activeSelf != visible)
         {
+            if (!visible)
+            {
+                _headFade?.Disable();
+                _targetFade.Update(Vector3.zero, false);
+                _hasPose = _hasNetworkSample = _hasNetworkSampleVelocity = _hasMotionReference = false;
+                _positionVelocity = Vector3.zero;
+            }
             _gameObject.SetActive(visible);
         }
 

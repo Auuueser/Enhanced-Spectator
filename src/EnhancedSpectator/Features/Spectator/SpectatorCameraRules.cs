@@ -5,6 +5,9 @@ namespace EnhancedSpectator.Features.Spectator;
 /// <summary>Pure camera input and collision recovery decisions.</summary>
 public static class SpectatorCameraRules
 {
+    /// <summary>Thermal imaging is available for every eligible spectator view; camera ownership is not required.</summary>
+    public static bool UseMonitorInfrared(bool enabled,bool eligibleSpectator,SpectatorCameraMode mode) =>
+        enabled && eligibleSpectator;
     /// <summary>Two and a half times the previous 15 metre limit.</summary>
     public const float MaximumFollowDistance = 37.5f;
     /// <summary>0.3.1 release radius 8m, expanded to 2.5 times for target-relative travel.</summary>
@@ -26,13 +29,19 @@ public static class SpectatorCameraRules
     }
 
     /// <summary>Wheel changes distance in every enhanced mode except watched-player first person.</summary>
-    public static bool AdjustsDistance(SpectatorCameraMode mode, bool altHeld = false) => mode != SpectatorCameraMode.FirstPerson;
+    public static bool AdjustsDistance(SpectatorCameraMode mode, bool altHeld = false) =>
+        mode != SpectatorCameraMode.FirstPerson && mode != SpectatorCameraMode.Monitor && mode != SpectatorCameraMode.Director;
+
+    internal static bool StowsModel(SpectatorCameraMode mode) =>
+        mode == SpectatorCameraMode.Cinematic || mode == SpectatorCameraMode.Monitor || mode == SpectatorCameraMode.Director;
 
     /// <summary>Wheel routing distinguishes target-relative travel from the self-model camera boom.</summary>
     internal static SpectatorWheelAction WheelAction(bool enhanced, SpectatorCameraMode mode, bool modifier) => !enhanced
         ? SpectatorWheelAction.VanillaDistance : mode switch
         {
             SpectatorCameraMode.FirstPerson => SpectatorWheelAction.None,
+            SpectatorCameraMode.Monitor => SpectatorWheelAction.None,
+            SpectatorCameraMode.Director => SpectatorWheelAction.None,
             SpectatorCameraMode.Cinematic => SpectatorWheelAction.CinematicDistance,
             SpectatorCameraMode.ThirdPerson when modifier => SpectatorWheelAction.SelfCameraDistance,
             _ => SpectatorWheelAction.TargetDistance

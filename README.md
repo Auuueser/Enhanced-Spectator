@@ -1,7 +1,7 @@
 <h1 align="center">Enhanced Spectator</h1>
 
 <p align="center">
-  <a href="https://github.com/Auuueser/Enhanced-Spectator/releases"><img alt="版本 0.3.5" src="https://img.shields.io/badge/版本-0.3.5-E35B18?style=flat-square&labelColor=24282C"></a>
+  <a href="https://github.com/Auuueser/Enhanced-Spectator/releases"><img alt="版本 0.4.0" src="https://img.shields.io/badge/版本-0.4.0-E35B18?style=flat-square&labelColor=24282C"></a>
   <a href="https://store.steampowered.com/app/1966720/Lethal_Company/"><img alt="游戏版本 V81" src="https://img.shields.io/badge/游戏版本-V81-E35B18?style=flat-square&labelColor=24282C"></a>
   <a href="https://github.com/BepInEx/BepInEx"><img alt="BepInEx 5" src="https://img.shields.io/badge/BepInEx-5-526D82?style=flat-square&labelColor=24282C"></a>
   <a href="https://github.com/Auuueser/Enhanced-Spectator/blob/main/LICENSE"><img alt="许可 GPL-3.0" src="https://img.shields.io/badge/许可-GPL--3.0-E35B18?style=flat-square&labelColor=24282C"></a>
@@ -28,6 +28,39 @@
   </tr>
 </table>
 
+### 运镜模式
+
+<table>
+  <tr>
+    <td width="50%" align="center"><img src="assets/readme/v0.4.0/travelling-factory.gif" alt="穿梭运镜 · 工厂"><br><sub>穿梭运镜 · 工厂</sub></td>
+    <td width="50%" align="center"><img src="assets/readme/v0.4.0/travelling-mansion.gif" alt="穿梭运镜 · 豪宅"><br><sub>穿梭运镜 · 豪宅</sub></td>
+  </tr>
+  <tr>
+    <td width="50%" align="center"><img src="assets/readme/v0.4.0/travelling-mine.gif" alt="穿梭运镜 · 矿井"><br><sub>穿梭运镜 · 矿井</sub></td>
+    <td width="50%" align="center"><img src="assets/readme/v0.4.0/elevator.gif" alt="电梯镜头"><br><sub>电梯镜头</sub></td>
+  </tr>
+  <tr>
+    <td width="50%" align="center"><img src="assets/readme/v0.4.0/monitor-factory.gif" alt="监视器 · 工厂"><br><sub>监视器 · 工厂</sub></td>
+    <td width="50%" align="center"><img src="assets/readme/v0.4.0/monitor-mansion.gif" alt="监视器 · 豪宅"><br><sub>监视器 · 豪宅</sub></td>
+  </tr>
+  <tr>
+    <td width="50%" align="center"><img src="assets/readme/v0.4.0/monitor-mine.gif" alt="监视器 · 矿井"><br><sub>监视器 · 矿井</sub></td>
+    <td width="50%" align="center"><img src="assets/readme/v0.4.0/thermal.png" alt="热成像"><br><sub>热成像</sub></td>
+  </tr>
+</table>
+
+### 观战面板
+
+<table>
+  <tr>
+    <td width="50%" align="center"><img src="assets/readme/v0.4.0/roster-compact-zh.png" alt="① 按 O 打开观战面板"><br><sub>① 按 O 打开观战面板</sub></td>
+    <td width="50%" align="center"><img src="assets/readme/v0.4.0/roster-viewers-zh.png" alt="② 按 P 显示光标，悬停查看完整观众名单"><br><sub>② 按 P 显示光标，悬停查看完整观众名单</sub></td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center"><img src="assets/readme/v0.4.0/roster-32-zh.png" alt="③ 最多支持 32 人大厅"><br><sub>③ 最多支持 32 人大厅</sub></td>
+  </tr>
+</table>
+
 ### ESC菜单
 
 <table>
@@ -46,16 +79,18 @@
 |:--|:--|
 | 自由视角 / 返回原版 | `F6` / `F7` |
 | 自身第三人称 / 队友第一人称 / 电影跟拍 | `F3` / `F4` / `F5` |
+| 运镜模式（设施室内） / 热成像 | `F1` / `F9` |
 | 移动 / 上升 / 下降 | `W A S D` / `Space` / `Left Ctrl` |
 | 加速 / 减速 / 回正位置 | `Left Shift` / `Left Alt` / `R` |
 | 观战距离 / 第三人称镜头到自身模型的距离 | 滚轮 / `Alt＋滚轮` |
-| 上一模型 / 下一模型；电影模式切换运镜风格 | `←` / `→` |
+| 上一模型 / 下一模型；电影与运镜模式切换风格 | `←` / `→` |
 | 播放或停止音效 / 下一音效 | `Z` / `X` |
+| 观战面板 / 光标（查看观众名单） | `O` / `P` |
 | 显示按键提示 / 隐藏观战界面 | `H` / `F2` |
 
 ### 安装
 
-通过 **r2modman / Thunderstore Mod Manager** 安装已发布版本，或将 `EnhancedSpectator.dll` 放入 `BepInEx/plugins/EnhancedSpectator/`，需要 **BepInExPack 5.4.2100**。
+通过 **r2modman / Thunderstore Mod Manager** 安装已发布版本，需要 **BepInExPack 5.4.2100**。手动安装时，将发布包中的 `EnhancedSpectator.dll`、`EnhancedSpectator.CameraRuntime.dll` 及随附许可文件一起放入 `BepInEx/plugins/EnhancedSpectator/`。
 
 配置保存在 `BepInEx/config/Auuueser.EnhancedSpectator.cfg`，高级设置位于同名 `.Advanced.cfg` 文件。
 
@@ -85,6 +120,39 @@
   </tr>
 </table>
 
+### Camera Choreography
+
+<table>
+  <tr>
+    <td width="50%" align="center"><img src="assets/readme/v0.4.0/travelling-factory.gif" alt="Travelling camera · Factory"><br><sub>Travelling camera · Factory</sub></td>
+    <td width="50%" align="center"><img src="assets/readme/v0.4.0/travelling-mansion.gif" alt="Travelling camera · Mansion"><br><sub>Travelling camera · Mansion</sub></td>
+  </tr>
+  <tr>
+    <td width="50%" align="center"><img src="assets/readme/v0.4.0/travelling-mine.gif" alt="Travelling camera · Mineshaft"><br><sub>Travelling camera · Mineshaft</sub></td>
+    <td width="50%" align="center"><img src="assets/readme/v0.4.0/elevator.gif" alt="Elevator shot"><br><sub>Elevator shot</sub></td>
+  </tr>
+  <tr>
+    <td width="50%" align="center"><img src="assets/readme/v0.4.0/monitor-factory.gif" alt="Monitor · Factory"><br><sub>Monitor · Factory</sub></td>
+    <td width="50%" align="center"><img src="assets/readme/v0.4.0/monitor-mansion.gif" alt="Monitor · Mansion"><br><sub>Monitor · Mansion</sub></td>
+  </tr>
+  <tr>
+    <td width="50%" align="center"><img src="assets/readme/v0.4.0/monitor-mine.gif" alt="Monitor · Mineshaft"><br><sub>Monitor · Mineshaft</sub></td>
+    <td width="50%" align="center"><img src="assets/readme/v0.4.0/thermal.png" alt="Thermal imaging"><br><sub>Thermal imaging</sub></td>
+  </tr>
+</table>
+
+### Watch Panel
+
+<table>
+  <tr>
+    <td width="50%" align="center"><img src="assets/readme/v0.4.0/roster-compact-en.png" alt="① Press O to open the watch panel"><br><sub>① Press O to open the watch panel</sub></td>
+    <td width="50%" align="center"><img src="assets/readme/v0.4.0/roster-viewers-en.png" alt="② Press P for the pointer and hover to see every viewer"><br><sub>② Press P for the pointer and hover to see every viewer</sub></td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center"><img src="assets/readme/v0.4.0/roster-32-en.png" alt="③ Supports lobbies of up to 32 players"><br><sub>③ Supports lobbies of up to 32 players</sub></td>
+  </tr>
+</table>
+
 ### ESC menu
 
 <table>
@@ -103,16 +171,18 @@
 |:--|:--|
 | Freecam / return to vanilla | `F6` / `F7` |
 | Self third person / teammate first person / cinematic tracking | `F3` / `F4` / `F5` |
+| Camera choreography (inside the facility) / thermal imaging | `F1` / `F9` |
 | Move / ascend / descend | `W A S D` / `Space` / `Left Ctrl` |
 | Fast / slow / recenter | `Left Shift` / `Left Alt` / `R` |
 | Spectator distance / third-person camera-to-model distance | Scroll wheel / `Alt + wheel` |
-| Previous / next model; switch camera styles in cinematic mode | `Left` / `Right` |
+| Previous / next model; switch styles in cinematic and choreography modes | `Left` / `Right` |
 | Play or stop sound / next sound | `Z` / `X` |
+| Watch panel / pointer for viewer lists | `O` / `P` |
 | Toggle key hints / hide spectator HUD | `H` / `F2` |
 
 ### Installation
 
-Install a published version through **r2modman / Thunderstore Mod Manager**, or place `EnhancedSpectator.dll` in `BepInEx/plugins/EnhancedSpectator/`. Requires **BepInExPack 5.4.2100**.
+Install a published version through **r2modman / Thunderstore Mod Manager**. Requires **BepInExPack 5.4.2100**. For a manual install, place `EnhancedSpectator.dll`, `EnhancedSpectator.CameraRuntime.dll` and the bundled license files from the release package in `BepInEx/plugins/EnhancedSpectator/`.
 
 Settings are saved to `BepInEx/config/Auuueser.EnhancedSpectator.cfg`; advanced settings use the matching `.Advanced.cfg` file.
 

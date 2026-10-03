@@ -54,7 +54,8 @@ public static class ModNetworkSerializer
         + FastBufferWriter.GetWriteSize<bool>()
         + FastBufferWriter.GetWriteSize<float>() * 7
         + FastBufferWriter.GetWriteSize<bool>()
-        + FastBufferWriter.GetWriteSize<float>() * 7;
+        + FastBufferWriter.GetWriteSize<float>() * 7
+        + FastBufferWriter.GetWriteSize<bool>() * 2;
 
     /// <summary>
     /// Gets the byte capacity needed for one peer identity message.
@@ -273,6 +274,9 @@ public static class ModNetworkSerializer
             writer.WriteValueSafe(state.TargetMotionReferenceLocalRotation.z);
             writer.WriteValueSafe(state.TargetMotionReferenceLocalRotation.w);
         }
+        // Optional suffix: older readers retain their existing prefix and ignore this field.
+        writer.WriteValueSafe(state.ModelStowed);
+        writer.WriteValueSafe(state.AutoCentering);
     }
 
     /// <summary>
@@ -369,6 +373,10 @@ public static class ModNetworkSerializer
                 targetMotionReferenceLocalRotation = Quaternion.identity;
             }
 
+            bool modelStowed = false;
+            if (reader.TryBeginRead(sizeof(byte))) reader.ReadValueSafe(out modelStowed);
+            bool autoCentering = false;
+            if (reader.TryBeginRead(sizeof(byte))) reader.ReadValueSafe(out autoCentering);
             state = new SpectatorPoseState(
                 isSpectating,
                 localClientId,
@@ -383,7 +391,8 @@ public static class ModNetworkSerializer
                 motionReferenceLocalRotation,
                 hasTargetMotionReference,
                 targetMotionReferenceLocalPosition,
-                targetMotionReferenceLocalRotation);
+                targetMotionReferenceLocalRotation,
+                modelStowed, autoCentering);
             return true;
         }
         catch (Exception ex)

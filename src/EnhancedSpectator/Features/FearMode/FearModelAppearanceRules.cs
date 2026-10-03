@@ -9,6 +9,21 @@ public static class FearModelAppearanceRules
     public static bool ShouldFade(bool enabled, bool viewerDead, bool fadeWhileSpectating) =>
         enabled && (!viewerDead || fadeWhileSpectating);
 
+    /// <summary>Only the circle's living player is affected unless this viewer opts into other players' circles.</summary>
+    public static bool ShouldFadeForTarget(bool enabled, bool viewerDead, bool fadeWhileSpectating,
+        bool fadeNearOtherPlayers, ulong? viewerClientId, ulong? viewerSlotId, ulong? targetClientId, ulong? targetSlotId)
+    {
+        if (!ShouldFade(enabled, viewerDead, fadeWhileSpectating)
+            || (!viewerClientId.HasValue && !viewerSlotId.HasValue)
+            || (!targetClientId.HasValue && !targetSlotId.HasValue)) return false;
+        if (fadeNearOtherPlayers) return true;
+        // A dead observer is never the living body at the centre of a circle.
+        if (viewerDead) return false;
+        return targetClientId.HasValue
+            ? viewerClientId.HasValue && viewerClientId.Value == targetClientId.Value
+            : viewerSlotId.HasValue && viewerSlotId.Value == targetSlotId!.Value;
+    }
+
     /// <summary>Full opacity uses the untouched native render path, including its scene depth.</summary>
     public static bool NeedsComposite(float opacity) => !float.IsNaN(opacity) && opacity >= 0f && opacity < 1f;
 

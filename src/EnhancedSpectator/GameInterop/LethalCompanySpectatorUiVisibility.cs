@@ -30,10 +30,10 @@ internal sealed class LethalCompanySpectatorUiVisibility : IGameSpectatorHudAdap
         bool spectating = _config.EnableEnhancedSpectator.Value && player != null && player.isPlayerDead
             && player.isInGameOverAnimation <= 0 && !round!.overrideSpectateCamera
             && player.spectatedPlayerScript != null && !player.spectatedPlayerScript.isPlayerDead;
-        bool blocked = !spectating || _input.IsCameraInputBlocked();
+        bool blocked = !spectating || _input.IsUiInputBlocked();
         bool wasRequested = _state.Requested;
         _state.Update(spectating, blocked, !blocked && SpectatorInputService.IsKeyPressedThisFrame(_config.Camera.ToggleHudKey.Value));
-        if (wasRequested != _state.Requested) ModLog.Info("Spectator HUD hidden: " + _state.Requested);
+        if (wasRequested != _state.Requested) ModLog.Debug("Spectator HUD hidden: " + _state.Requested);
         if (!blocked && SpectatorInputService.IsKeyPressedThisFrame(_config.Camera.ToggleKeyHintsKey.Value))
             _config.Camera.ShowKeyHints.Value = !_config.Camera.ShowKeyHints.Value;
     }
@@ -50,14 +50,14 @@ internal sealed class LethalCompanySpectatorUiVisibility : IGameSpectatorHudAdap
         try
         {
             var hud = HUDManager.Instance;
-            if (self._input.IsCameraInputBlocked()) return;
+            if (self._input.IsUiInputBlocked()) return;
             Canvas? nativeRoot = hud?.HUDContainer != null ? hud.HUDContainer.GetComponentInParent<Canvas>()?.rootCanvas : null;
             self._roots.Clear();
             // Discover current roots at submission so newly created third-party overlays cannot flash for a cache interval.
             foreach (var canvas in UnityEngine.Object.FindObjectsOfType<Canvas>())
             {
                 var root = canvas.rootCanvas;
-                if (root == null || !self._roots.Add(root)) continue;
+                if (root == null || LethalCompanyCameraTransition.Owns(root) || !self._roots.Add(root)) continue;
                 if (root.renderMode == RenderMode.WorldSpace && root != nativeRoot
                     && (hud == null || hud.UICamera == null || root.worldCamera != hud.UICamera)) continue;
                 self._scope.Hide(root, hud != null ? hud.playerScreen : null);

@@ -6,7 +6,7 @@ using BepInEx.Configuration;
 namespace EnhancedSpectator.Config;
 
 /// <summary>
-/// Moves advanced entries out of the primary config while preserving live ConfigEntry references.
+/// Moves advanced entries to their owning file, retaining compatibility with previously captured references.
 /// </summary>
 internal static class AdvancedConfigBinding
 {
@@ -29,7 +29,7 @@ internal static class AdvancedConfigBinding
     {
         ConfigEntry<T> advancedEntry = advancedConfig.Bind(
             sourceEntry.Definition,
-            sourceEntry.Value,
+            (T)sourceEntry.DefaultValue,
             sourceEntry.Description);
         if (migrateFromPrimary)
         {
@@ -77,6 +77,6 @@ internal static class AdvancedConfigBinding
         };
 
         primaryConfig.Remove(sourceEntry.Definition);
-        return sourceEntry;
+        return advancedEntry;
     }
 }

@@ -29,9 +29,17 @@ internal static class SpectatorHintText
         Pair("自由", "Free", c.EnableFreecam.Value ? c.ToggleFreecamKey.Value : KeyCode.None, "原版", "Vanilla", c.ResetToVanillaViewKey.Value);
         Pair("第三人称", "Third", c.EnableThirdPerson.Value ? c.ToggleThirdPersonKey.Value : KeyCode.None, "第一人称", "First", c.Camera.FirstPersonKey.Value);
         Pair("电影", "Cinema", c.Camera.CinematicKey.Value, "回正", "Recenter", mode.HasValue ? c.RecenterKey.Value : KeyCode.None);
+        Single("运镜模式", "Camera choreography", c.Camera.MonitorKey.Value);
         if (mode == SpectatorCameraMode.Cinematic)
             rows.Add(new Row((cn ? "风格：" : "Style: ") + CinematicStyles.Name(c.Camera.CinematicStyle.Value, cn), cn ? "左 / 右" : "Left / Right"));
-        if (mode != SpectatorCameraMode.FirstPerson) rows.Add(new Row(cn ? "观战距离" : "Target distance", cn ? "滚轮" : "Wheel"));
+        Single("热成像", "Thermal", c.Camera.MonitorInfraredKey.Value);
+        if (mode == SpectatorCameraMode.Monitor)
+        {
+
+            rows.Add(new Row((cn ? "风格：" : "Style: ") + MonitorCameraStyles.Name(SpectatorFreecamController.Current?.EffectiveMonitorStyle ?? c.Camera.MonitorStyle.Value, cn), cn ? "左 / 右" : "Left / Right"));
+        }
+        if (mode != SpectatorCameraMode.FirstPerson && mode != SpectatorCameraMode.Monitor && mode != SpectatorCameraMode.Director)
+            rows.Add(new Row(cn ? "观战距离" : "Target distance", cn ? "滚轮" : "Wheel"));
         if (mode == SpectatorCameraMode.ThirdPerson && c.Camera.SelfCameraDistanceModifier.Value != KeyCode.None)
             rows.Add(new Row(cn ? "自身镜头距离" : "Self camera", Key(c.Camera.SelfCameraDistanceModifier.Value) + (cn ? " + 滚轮" : " + Wheel")));
         if (mode == SpectatorCameraMode.Freecam || mode == SpectatorCameraMode.ThirdPerson)
@@ -47,6 +55,8 @@ internal static class SpectatorHintText
             Pair("播放/停止", "Play/stop", c.FearSoundKey.Value, "下一音效", "Next sound", c.FearSoundNextKey.Value);
         }
         Single("按键提示", "Key hints", c.Camera.ToggleKeyHintsKey.Value);
+        Single("观战面板", "Watch panel", c.Camera.ToggleSpectatorRosterKey.Value);
+        Single("光标／查看观众", "Viewer pointer", c.Camera.ToggleSpectatorCursorKey.Value);
         Single("隐藏界面", "Hide HUD", c.Camera.ToggleHudKey.Value);
         return rows;
     }

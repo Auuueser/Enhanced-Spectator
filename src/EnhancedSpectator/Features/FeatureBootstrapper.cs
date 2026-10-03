@@ -49,7 +49,7 @@ public sealed class FeatureBootstrapper : IDisposable
             _runtimeDispatchLists.AddCameraPreCullTickable(spectatorModule);
 
             var visibility = new SpectatorHudModule(new LethalCompanySpectatorUiVisibility(config));
-            ModLog.Info($"Spectator UI: build=hud-first-person-r4-20260922; keyHints={config.Camera.ShowKeyHints.Value}; hintsKey={config.Camera.ToggleKeyHintsKey.Value}; hudKey={config.Camera.ToggleHudKey.Value}.");
+            ModLog.Debug($"Spectator UI: build=hud-first-person-r4-20260922; keyHints={config.Camera.ShowKeyHints.Value}; hintsKey={config.Camera.ToggleKeyHintsKey.Value}; hudKey={config.Camera.ToggleHudKey.Value}.");
             _features.Add(visibility);
             _runtimeDispatchLists.AddLateTickable(visibility);
             var hudModule = new SpectatorHudModule(new LethalCompanySpectatorHudAdapter());
@@ -87,6 +87,9 @@ public sealed class FeatureBootstrapper : IDisposable
                 NetworkingModule networkingModule = new NetworkingModule(networkService);
                 _features.Add(networkingModule);
                 _runtimeDispatchLists.AddTickable(networkingModule);
+                var roster = new SpectatorRosterModule(config, networkService, new LethalCompanySpectatorRosterAdapter());
+                _features.Add(roster);
+                _runtimeDispatchLists.AddLateTickable(roster);
 
                 ConnectedPlayerStateRepairModule playerStateRepairModule = new ConnectedPlayerStateRepairModule(
                     config,
@@ -99,6 +102,7 @@ public sealed class FeatureBootstrapper : IDisposable
                     config,
                     gameSpectatorAdapter,
                     networkService);
+                LethalCompanyModelVisibility.Configure(config, presenceService, spectatorModule, posePresentationService);
                 SpectatorPresenceModule presenceModule = new SpectatorPresenceModule(presenceService);
                 _features.Add(presenceModule);
                 _runtimeDispatchLists.AddTickable(presenceModule);
@@ -322,6 +326,8 @@ public sealed class FeatureBootstrapper : IDisposable
             _features[index].Dispose();
         }
 
+        LethalCompanyCameraTransition.Clear();
+        LethalCompanyModelVisibility.Clear();
         _initialized = false;
         ModLog.Debug("Feature modules disposed.");
     }

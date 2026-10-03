@@ -16,6 +16,7 @@ namespace EnhancedSpectator.GameInterop
         private readonly Renderer[] _renderers;
         private readonly Saved[] _saved;
         private int _count;
+        internal bool IsActive => _count != 0;
         internal Bounds FirstBounds => _saved[0].Renderer.bounds;
         internal NativeFadeRendererScope(Renderer[] renderers) { _renderers = renderers; _saved = new Saved[renderers.Length]; }
         internal bool Begin(int cameraMask, int isolationLayer, uint tag)
@@ -48,6 +49,20 @@ namespace EnhancedSpectator.GameInterop
                 _saved[i] = default;
             }
             _count = 0;
+        }
+        // Pose owners can change their normal layer while a camera owns the
+        // renderer. Save that new baseline without exposing it to the scene cull.
+        internal void SetLayer(Transform root, int layer)
+        {
+            bool isolated = false;
+            for (int i = 0; i < _count; i++)
+            {
+                if (_saved[i].Object != root.gameObject) continue;
+                _saved[i].Layer = layer;
+                isolated = true;
+            }
+            if (!isolated) root.gameObject.layer = layer;
+            for (int i = 0; i < root.childCount; i++) SetLayer(root.GetChild(i), layer);
         }
     }
 }

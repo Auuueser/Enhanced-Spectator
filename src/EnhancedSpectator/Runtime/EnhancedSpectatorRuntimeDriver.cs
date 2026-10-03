@@ -67,6 +67,7 @@ public sealed class EnhancedSpectatorRuntimeDriver : MonoBehaviour
     public static void BeginShutdown()
     {
         LethalCompanySpectatorUiVisibility.Clear();
+        LethalCompanySpectatorPresentation.Clear();
         _applicationQuitting = true;
         LethalCompanyFirstPersonVisibility.Clear();
         RuntimeConnectionState.MarkPluginShuttingDown();
@@ -100,6 +101,7 @@ public sealed class EnhancedSpectatorRuntimeDriver : MonoBehaviour
         LethalCompanySpectatorUiVisibility.RestoreRenderers();
         LethalCompanyFirstPersonVisibility.Restore();
         _featureBootstrapper?.Tick();
+        LethalCompanySpectatorPresentation.Tick();
     }
 
     private void LateUpdate()
@@ -135,7 +137,9 @@ public sealed class EnhancedSpectatorRuntimeDriver : MonoBehaviour
 
     private static void OnSceneLoaded(Scene scene, LoadSceneMode mode)
     {
+        if(MonitorDoorGeometry.OwnsScene(scene)) return;
         LethalCompanySpectatorUiVisibility.Clear();
+        LethalCompanySpectatorPresentation.Clear();
         _ = scene;
         _ = mode;
         LethalCompanyFirstPersonVisibility.Clear();
@@ -145,7 +149,9 @@ public sealed class EnhancedSpectatorRuntimeDriver : MonoBehaviour
 
     private static void OnSceneUnloaded(Scene scene)
     {
+        if(MonitorDoorGeometry.OwnsScene(scene)) return;
         LethalCompanySpectatorUiVisibility.Clear();
+        LethalCompanySpectatorPresentation.Clear();
         _ = scene;
         LethalCompanyFirstPersonVisibility.Clear();
         RuntimeConnectionState.MarkSceneTransition();
@@ -153,15 +159,18 @@ public sealed class EnhancedSpectatorRuntimeDriver : MonoBehaviour
 
     private static void OnCameraPostRender(Camera camera) => LethalCompanyFirstPersonVisibility.Restore();
 
-    private static void OnEndCameraRendering(ScriptableRenderContext context, Camera camera) => LethalCompanyFirstPersonVisibility.Restore();
+    private static void OnEndCameraRendering(ScriptableRenderContext context, Camera camera)
+    { LethalCompanyFirstPersonVisibility.Restore(); LethalCompanySpectatorPresentation.EndCamera(camera); }
 
     private static void OnCameraPreCull(Camera camera)
     {
+        NativeFadeDiagnostics.CameraEvent("builtin-pre-cull", camera);
         TryCameraPreCullTick(camera);
     }
 
     private static void OnBeginCameraRendering(ScriptableRenderContext context, Camera camera)
     {
+        NativeFadeDiagnostics.CameraEvent("SRP-begin", camera);
         _ = context;
         TryCameraPreCullTick(camera);
     }

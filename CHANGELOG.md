@@ -3,6 +3,37 @@
 ## 中文
 
 <details>
+<summary><strong>0.4.0</strong></summary>
+
+### 运镜模式
+
+- 新增设施室内的**运镜模式**（`F1`），提供**穿梭运镜和监视器**两种风格，`← / →` 切换；进入设施时默认自动使用穿梭运镜，手动选择视角后不再接管。
+
+### 画面
+
+- 新增**热成像**（`F9`）。
+- 新增观战暗部提亮。
+
+### 电影跟拍
+
+- 新增**闪灵跟随**与**居中跟随**两种风格。
+- 新增稳定跟随、鼠标闲置后自动居中及三档跟随速度。
+
+### 观战面板
+
+- 新增**观战面板**（`O`），显示每位存活玩家及正在观看他的人数，突出当前观看对象，最多支持 32 人大厅。
+- 按 `P` 显示光标，悬停即可查看完整观众名单。
+
+### 模型与性能
+
+- 电影与运镜模式下自动收起自己的观战模型，避免遮挡镜头。
+- 新增本机隐藏全部观战模型、限制同时显示的模型数量，以及存活时隐藏正在自动居中的观战者。
+- 新增可选的他人透明圈渐隐，并提升模型渐隐的稳定性。
+- 模型缩略图缓存并按需生成，打开菜单更快；精简常规日志输出。
+
+</details>
+
+<details>
 <summary><strong>0.3.5</strong></summary>
 
 ### 观战系统拓展更新
@@ -158,6 +189,37 @@
 </details>
 
 ## English
+
+<details>
+<summary><strong>0.4.0</strong></summary>
+
+### Camera choreography
+
+- Add an indoor **camera choreography mode** (`F1`) with **travelling and monitor** styles, switched with `Left / Right`. Travelling starts automatically inside the facility until you choose a view yourself.
+
+### Image
+
+- Add **thermal imaging** (`F9`).
+- Add spectator shadow lifting.
+
+### Cinematic tracking
+
+- Add **Shining follow** and **centered follow** styles.
+- Add follow stabilization, automatic recentering after mouse inactivity, and three follow speeds.
+
+### Watch panel
+
+- Add a **watch panel** (`O`) listing every living player with their viewer count and highlighting your current target, for lobbies of up to 32 players.
+- Press `P` for the pointer and hover over a player to see the full viewer list.
+
+### Models and performance
+
+- Automatically stow your own spectator model in cinematic and choreography modes so it never blocks the shot.
+- Add local options to hide all spectator models, limit how many are shown, and hide spectators who are recentering while you are alive.
+- Add optional fading inside other players' fade circles and make model fading more reliable.
+- Cache model thumbnails and build them on demand for faster menus; trim routine log output.
+
+</details>
 
 <details>
 <summary><strong>0.3.5</strong></summary>

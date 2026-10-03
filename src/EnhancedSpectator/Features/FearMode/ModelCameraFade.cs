@@ -13,6 +13,9 @@ internal sealed class ModelCameraFade : IDisposable
     internal void Prepare() => _native.Prepare();
     internal void Begin(float opacity) { Restore(); _native.Begin(opacity); }
     internal void Restore() => _native.Restore();
+    internal void Trace(string stage, Camera? camera = null) => _native.Trace(stage, camera);
+    internal bool IsIsolated => _native.IsIsolated;
+    internal void SetLayer(Transform root, int layer) => _native.SetLayer(root, layer);
     internal void EndCamera(Camera camera) => _native.EndCamera(camera);
     internal void Disable() => _native.Disable();
     public void Dispose() => _native.Dispose();

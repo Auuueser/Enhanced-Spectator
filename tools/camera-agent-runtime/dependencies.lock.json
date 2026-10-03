@@ -1,0 +1,13 @@
+{
+  "packages": [
+    {
+      "name": "com.unity.cinemachine",
+      "version": "2.9.7",
+      "url": "https://packages.unity.com/com.unity.cinemachine/-/com.unity.cinemachine-2.9.7.tgz",
+      "sha256": "9a2edc5823fc8d40dccff73c2afe7477f2586ebd0d1feca3fa36d41038de9372",
+      "preparedRuntimeSha256": "ebab173052ef491235cf75bc003a8fea007176ca85a054c88b298144ee96cac0",
+      "namespace": "Cinemachine",
+      "privateNamespace": "EnhancedSpectator.CameraRuntime.Cinemachine"
+    }
+  ]
+}

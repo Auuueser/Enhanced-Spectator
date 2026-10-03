@@ -52,7 +52,6 @@ public sealed class FearModeNetworkService : IFearModeStateProvider, IDisposable
     private long _localSoundRequestSequence;
     private long _hostSoundSequence;
     private long _lastReceivedSoundSequence;
-    private int _soundDropReports = 16;
 
     /// <summary>Creates the fear-mode network service.</summary>
     public FearModeNetworkService(
@@ -66,7 +65,12 @@ public sealed class FearModeNetworkService : IFearModeStateProvider, IDisposable
         SceneManager.sceneLoaded += OnSceneLoaded;
     }
 
-    private void OnSceneLoaded(Scene scene, LoadSceneMode mode) => _nextCatalogRefreshFrame = 0;
+    private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
+    {
+        if (MonitorDoorGeometry.OwnsScene(scene)) return;
+        _catalog.InvalidateSources();
+        _nextCatalogRefreshFrame = 0;
+    }
 
     /// <inheritdoc />
     public bool IsSessionEnabled => _sessionEnabled;
@@ -91,6 +95,7 @@ public sealed class FearModeNetworkService : IFearModeStateProvider, IDisposable
     /// <summary>Refreshes the runtime catalog immediately when the user opens its retained view.</summary>
     public void RefreshCatalogNow()
     {
+        _catalog.InvalidateSources();
         RefreshCatalogWhenNeeded(force: true);
     }
 
@@ -126,6 +131,7 @@ public sealed class FearModeNetworkService : IFearModeStateProvider, IDisposable
             return;
         }
 
+        _catalog.TickPreparation();
         RefreshCatalogWhenNeeded(force: false);
         NetworkManager manager = _networkManager!;
         if (manager.IsHost)
@@ -141,7 +147,7 @@ public sealed class FearModeNetworkService : IFearModeStateProvider, IDisposable
                 }
 
                 BroadcastSession();
-                ModLog.Info(desiredGate
+                ModLog.Debug(desiredGate
                     ? "Fear mode session gate enabled by host."
                     : "Fear mode session gate disabled by host.");
             }
@@ -695,7 +701,7 @@ public sealed class FearModeNetworkService : IFearModeStateProvider, IDisposable
 
     private void ReportSoundDrop(string reason)
     {
-        if (_soundDropReports-- > 0) ModLog.Info("Client fear sound packet not accepted: " + reason + ".");
+        if (ModLog.IsDebugEnabled) ModLog.Debug("Client fear sound packet not accepted: " + reason + ".");
     }
 
     private bool MatchesItemSoundCatalog(FearSoundEventState state)

@@ -36,8 +36,6 @@ public sealed class FearSoundModule : IFeatureModule, IRuntimeTickable, IRuntime
     private bool _localIntentPlaying;
     private bool _initialized;
     private bool _lastReception = true;
-    private int _outputReports = 16;
-    private int _skipReports = 16;
 
     /// <summary>Creates the fear-sound module.</summary>
     public FearSoundModule(
@@ -233,12 +231,12 @@ public sealed class FearSoundModule : IFeatureModule, IRuntimeTickable, IRuntime
 
         TryContinueAutoCycle();
         ApplyNearbyPlayerLimit();
-        if (receptionChanged && _outputReports-- > 0)
+        if (receptionChanged && ModLog.IsDebugEnabled)
         {
             int audible = 0;
             foreach (var playback in _activePlaybacks)
                 if (playback.Source != null && !playback.Source.mute && playback.Source.volume > 0) audible++;
-            ModLog.Info($"Fear sound reception changed: enabled={_lastReception}, host={_fearService.IsHost}, active={_activePlaybacks.Count}, outputEnabled={audible}, configuredVolume={_config.FearSoundVolume.Value:0.###}.");
+            ModLog.Debug($"Fear sound reception changed: enabled={_lastReception}, host={_fearService.IsHost}, active={_activePlaybacks.Count}, outputEnabled={audible}, configuredVolume={_config.FearSoundVolume.Value:0.###}.");
         }
     }
 
@@ -321,7 +319,7 @@ public sealed class FearSoundModule : IFeatureModule, IRuntimeTickable, IRuntime
             return true;
         }
 
-        ModLog.Info($"Fear sound unavailable for model {selection.ModelKey}: no original clips found.");
+        ModLog.Debug($"Fear sound unavailable for model {selection.ModelKey}: no original clips found.");
         return false;
     }
 
@@ -430,7 +428,7 @@ public sealed class FearSoundModule : IFeatureModule, IRuntimeTickable, IRuntime
             _localIntentPlaying = true;
         }
 
-        ModLog.Info(
+        ModLog.Debug(
             $"Fear sound playing: client={soundEvent.ClientId}, model={soundEvent.ModelKey}, clip={clip.name}, index={soundEvent.ClipIndex + 1}/{_clipScratch.Count}, duration={clip.length:0.###}s, spatialMax={source.maxDistance:0.#}m, reception={_config.Camera.HearOtherFearSounds.Value}, volume={source.volume:0.###}, host={_fearService.IsHost}.");
     }
 
@@ -479,7 +477,7 @@ public sealed class FearSoundModule : IFeatureModule, IRuntimeTickable, IRuntime
 
     private void ReportSkipped(FearSoundEventState soundEvent, string reason)
     {
-        if (_skipReports-- > 0) ModLog.Info($"Fear sound not started: client={soundEvent.ClientId}, model={soundEvent.ModelKey}, reason={reason}, reception={_config.Camera.HearOtherFearSounds.Value}.");
+        if (ModLog.IsDebugEnabled) ModLog.Debug($"Fear sound not started: client={soundEvent.ClientId}, model={soundEvent.ModelKey}, reason={reason}, reception={_config.Camera.HearOtherFearSounds.Value}.");
     }
 
     private void ApplyOutput(IGameFearAudioOutput output, ulong clientId, int closerPlayers, int maximumAudiblePlayers)

@@ -1,21 +1,58 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using EnhancedSpectator.Features.FearMode;
 using UnityEngine;
 
 namespace EnhancedSpectator.GameInterop;
 
-public sealed partial class LethalCompanyFearModeAdapter
+public sealed partial class LethalCompanyFearModeAdapter : IGameFearCatalogPreparationAdapter
 {
+    private readonly FearCatalogDiscoverySchedule _discovery = new FearCatalogDiscoverySchedule();
+    private readonly Dictionary<int, bool> _supportedPrefabs = new Dictionary<int, bool>();
+    private bool _dropshipRequested;
+    private int _preparationFrame = -1;
     private readonly Dictionary<string, FearVisualSource> _expandedSources = new Dictionary<string, FearVisualSource>(StringComparer.Ordinal);
     private readonly Dictionary<string, Item> _originalItems = new Dictionary<string, Item>(StringComparer.Ordinal);
     private ItemDropship? _dropship;
     private RuntimeEnemyVisual? _dropshipSnapshot;
+    private RuntimeVisualBuild? _dropshipSnapshotBuild;
+    private float _nextSnapshotRetry;
     private readonly OriginalDropshipVisualSource _originalDropship = new OriginalDropshipVisualSource();
     private readonly OriginalDropshipSoundSource _originalDropshipSounds = new OriginalDropshipSoundSource();
     private FearVisualSource? _dropshipSource;
     private readonly List<AudioClip> _dropshipClips = new List<AudioClip>();
     private readonly OriginalItemSoundCatalog _itemSounds = new OriginalItemSoundCatalog();
+
+    void IGameFearCatalogPreparationAdapter.InvalidateCatalogSources() => _discovery.Invalidate();
+    void IGameFearCatalogPreparationAdapter.TickCatalogPreparation()
+    {
+        if (!_dropshipRequested || _preparationFrame == Time.frameCount) return;
+        _preparationFrame = Time.frameCount;
+        var original = _originalDropship.Poll();
+        if (original != null && original.HierarchyRoot != null)
+        {
+            _dropshipSource = original;
+            _expandedSources[FearModelIdentityRules.Dropship] = original;
+            return;
+        }
+        // Preserve the persistent live-source fallback if V81 resource validation fails.
+        if (!_originalDropship.Finished || _dropshipSnapshot != null) return;
+        if (_dropshipSnapshotBuild == null && _dropshipSource?.HierarchyRoot != null && Time.unscaledTime >= _nextSnapshotRetry)
+        {
+            _nextSnapshotRetry = Time.unscaledTime + 5f;
+            _dropshipSnapshotBuild = new RuntimeEnemyVisualFactory().BeginCreate(
+                _dropshipSource, FearModelIdentityRules.Dropship, 2f, true, 1f, ~0, false);
+        }
+        if (_dropshipSnapshotBuild == null) return;
+        _dropshipSnapshotBuild.Work.Advance();
+        if (!_dropshipSnapshotBuild.Work.Done) return;
+        _dropshipSnapshot = _dropshipSnapshotBuild.Take();
+        _dropshipSnapshotBuild.Dispose(); _dropshipSnapshotBuild = null;
+        if (_dropshipSnapshot == null) return;
+        _dropshipSource = _dropshipSnapshot.SnapshotSource();
+        _expandedSources[FearModelIdentityRules.Dropship] = _dropshipSource;
+    }
     private static readonly string[] ShipVisualBranches =
     {
         "ShipHull", "ShipInside", "ShipInside.001", "ShipModels2b", "ShipRailPosts", "ShipRails",
@@ -28,10 +65,22 @@ public sealed partial class LethalCompanyFearModeAdapter
     // Called only by the bounded catalog refresh, never from a render tick.
     private void RefreshExpandedSources(List<string> destination)
     {
-        _expandedSources.Clear();
-        _originalItems.Clear();
         var round = StartOfRound.Instance;
-        if (round == null) return;
+        if (round == null)
+        {
+            _discovery.Invalidate(); _expandedSources.Clear(); _originalItems.Clear(); return;
+        }
+        int roundId = round.GetInstanceID();
+        int definitions = round.allItemsList != null ? RuntimeHelpers.GetHashCode(round.allItemsList) : 0;
+        int count = round.allItemsList?.itemsList?.Count ?? 0;
+        foreach (var source in _expandedSources.Values)
+            if (source.HierarchyRoot == null) { _discovery.Invalidate(); break; }
+        if (!_discovery.NeedsRefresh(roundId, definitions, count, Time.unscaledTime))
+        {
+            CopyExpandedKeys(destination);
+            return;
+        }
+        _expandedSources.Clear(); _originalItems.Clear(); _supportedPrefabs.Clear();
         if (round.allItemsList != null)
             foreach (var item in round.allItemsList.itemsList) AddOriginalItem(item);
         // Includes original scene-only equipment and already-loaded original definitions omitted from save lists.
@@ -68,6 +117,17 @@ public sealed partial class LethalCompanyFearModeAdapter
         if (TryGetBushWolf(out var wolf) && wolf != null)
             _expandedSources[FearModelIdentityRules.BushWolf] = new FearVisualSource(wolf.enemyPrefab.transform, wolf.enemyPrefab.transform,
                 normalizeRootPose: true, useMeshBoundsForNormalization: true, skinnedMeshOnly: true);
+        _discovery.Refreshed(roundId, definitions, count, Time.unscaledTime);
+        CopyExpandedKeys(destination);
+    }
+
+    private void CopyExpandedKeys(List<string> destination)
+    {
+        // RoundManager may publish this original enemy after the scene-loaded event.
+        // Check its small direct list without repeating global object discovery.
+        if (TryGetBushWolf(out var wolf) && wolf != null)
+            _expandedSources[FearModelIdentityRules.BushWolf] = new FearVisualSource(wolf.enemyPrefab.transform, wolf.enemyPrefab.transform,
+                normalizeRootPose: true, useMeshBoundsForNormalization: true, skinnedMeshOnly: true);
         foreach (var pair in _expandedSources) destination.Add(pair.Key);
         // Keep the card discoverable during the one-time asynchronous original resource read.
         if (!destination.Contains(FearModelIdentityRules.Dropship)) destination.Add(FearModelIdentityRules.Dropship);
@@ -75,8 +135,6 @@ public sealed partial class LethalCompanyFearModeAdapter
 
     private void RefreshDropshipSource()
     {
-        _originalDropshipSounds.Poll();
-        if (_dropshipSource == null) _dropshipSource = _originalDropship.Poll();
         if (_dropshipSource != null && _dropshipSource.HierarchyRoot != null)
             _expandedSources[FearModelIdentityRules.Dropship] = _dropshipSource;
         _dropship = null;
@@ -110,13 +168,8 @@ public sealed partial class LethalCompanyFearModeAdapter
                 normalizeRootPose: true, forceRendererVisibility: true, includedRenderers: renderers, miniature: true);
             if (_dropshipSource == null || _dropshipSource.HierarchyRoot == null)
             {
-                _dropshipSnapshot?.Dispose();
-                if (new RuntimeEnemyVisualFactory().TryCreate(liveSource, FearModelIdentityRules.Dropship, 2f, true, 1f, ~0,
-                    out _dropshipSnapshot, out string reason) && _dropshipSnapshot != null)
-                {
-                    _dropshipSource = _dropshipSnapshot.SnapshotSource();
-                    EnhancedSpectator.Logging.ModLog.Info("Mini dropship renderer source cached across moon changes: " + reason);
-                }
+                // Discovery is read-only. Persistent original geometry is prepared on demand.
+                _dropshipSource = liveSource;
             }
             _expandedSources[FearModelIdentityRules.Dropship] = _dropshipSource ?? liveSource;
             return;
@@ -130,7 +183,14 @@ public sealed partial class LethalCompanyFearModeAdapter
 
     private void AddOriginalItem(Item item)
     {
-        if (!IsOriginalItem(item) || item.spawnPrefab == null || !HasSupportedRenderer(item.spawnPrefab.transform)) return;
+        if (!IsOriginalItem(item) || item.spawnPrefab == null) return;
+        int prefab = item.spawnPrefab.GetInstanceID();
+        if (!_supportedPrefabs.TryGetValue(prefab, out bool supported))
+        {
+            supported = HasSupportedRenderer(item.spawnPrefab.transform);
+            _supportedPrefabs[prefab] = supported;
+        }
+        if (!supported) return;
         string key = "item:" + item.name;
         _originalItems[key] = item;
         _expandedSources[key] = new FearVisualSource(item.spawnPrefab.transform, item.spawnPrefab.transform, normalizeRootPose: true);

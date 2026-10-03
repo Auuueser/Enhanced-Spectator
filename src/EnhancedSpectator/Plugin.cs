@@ -18,6 +18,7 @@ public sealed class Plugin : BaseUnityPlugin
 {
     private FeatureBootstrapper? _featureBootstrapper;
     private PatchBootstrapper? _patchBootstrapper;
+    private DiagnosticLoggingBinding? _diagnosticLogging;
     private bool _applicationQuitting;
     private bool _shutdownComplete;
 
@@ -30,15 +31,15 @@ public sealed class Plugin : BaseUnityPlugin
 
         EnhancedSpectatorConfig config = EnhancedSpectatorConfig.Bind(Config);
         GameInterop.NativeFadePass.Configure(config.Camera);
+        GameInterop.LethalCompanySpectatorPresentation.Configure(config);
         config.Camera.FadeRadius.SettingChanged += (_, _) => LogFadeConfiguration(config);
         config.Camera.FadeModelsWhileSpectating.SettingChanged += (_, _) => LogFadeConfiguration(config);
         config.Camera.FadeModelsNearby.SettingChanged += (_, _) => LogFadeConfiguration(config);
-        ModLog.SetDebugEnabled(config.EnableDebugLogging.Value);
-        LogFadeConfiguration(config);
-        if (config.EnableDebugLogging.Value)
+        _diagnosticLogging = new DiagnosticLoggingBinding(config.EnableDebugLogging, () =>
         {
+            LogFadeConfiguration(config);
             PluginDiagnostics.LogPluginBinaryHash(Info.Location);
-        }
+        });
 
         _featureBootstrapper = new FeatureBootstrapper(config);
         _featureBootstrapper.Initialize();
@@ -48,11 +49,11 @@ public sealed class Plugin : BaseUnityPlugin
 
         EnhancedSpectatorRuntimeDriver.Install(_featureBootstrapper, Shutdown);
 
-        ModLog.Info("Local spectator freecam initialized.");
+        ModLog.Debug("Local spectator freecam initialized.");
     }
 
     private static void LogFadeConfiguration(EnhancedSpectatorConfig config) =>
-        ModLog.Info($"Fade configuration: build={GameInterop.NativeFadePass.ImplementationId}, enabled={config.Camera.FadeModelsNearby.Value}, whileSpectating={config.Camera.FadeModelsWhileSpectating.Value}, radius={config.Camera.FadeRadius.Value:F2}, backend=native-whole-model. Camera preparation and draw submission are reported separately.");
+        ModLog.Debug($"Fade configuration: build={GameInterop.NativeFadePass.ImplementationId}, enabled={config.Camera.FadeModelsNearby.Value}, whileSpectating={config.Camera.FadeModelsWhileSpectating.Value}, radius={config.Camera.FadeRadius.Value:F2}, backend=native-whole-model. Camera preparation and draw submission are reported separately.");
 
     private void OnDestroy()
     {
@@ -89,6 +90,8 @@ public sealed class Plugin : BaseUnityPlugin
         _featureBootstrapper?.Dispose();
         GameInterop.NativeFadePass.Shutdown();
 
-        ModLog.Info("Local spectator freecam shut down.");
+        ModLog.Debug("Local spectator freecam shut down.");
+        _diagnosticLogging?.Dispose();
+        _diagnosticLogging = null;
     }
 }

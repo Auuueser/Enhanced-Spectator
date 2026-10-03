@@ -77,20 +77,21 @@ public sealed partial class SpectatorFreecamController
         {
             case SpectatorLifecycleEventKind.PlayerDied:
             case SpectatorLifecycleEventKind.CameraSwitched:
-                _hasPose = false;
+                if (_deathHandoffPhase == DeathHandoffPhase.None) _hasPose = false;
                 _cameraInactiveGraceUntilFrame = SpectatorFreecamRecoveryPolicy.ExtendGraceUntilFrame(
                     Time.frameCount,
                     CameraInactiveRecoveryFrames);
                 break;
             case SpectatorLifecycleEventKind.SpectatedPlayerEffectsApplied:
                 BeginTargetSwitchRecoveryWindow();
-                if (_settings.RecenterOnTargetSwitch)
+                if (_settings.RecenterOnTargetSwitch && _deathHandoffPhase == DeathHandoffPhase.None)
                 {
                     _recenterRequested = true;
                 }
 
                 break;
             case SpectatorLifecycleEventKind.GameOverOverrideChanged:
+                ClearDeathHandoff();
                 if (_settings.DisableDuringGameOverOverride && _adapter.IsGameOverSpectateOverrideActive())
                 {
                     Deactivate(clearAnchor: false);
@@ -127,9 +128,10 @@ public sealed partial class SpectatorFreecamController
 
             if (_inputService.ResetToVanillaPressed)
             {
+                _monitorPreference.Select(SpectatorCameraMode.Freecam);
                 _state.UserEnabled = false;
                 Deactivate(clearAnchor: false);
-                ModLog.Info("Enhanced spectator freecam disabled until toggled again.");
+                ModLog.Debug("Enhanced spectator freecam disabled until toggled again.");
                 return;
             }
 
@@ -145,14 +147,21 @@ public sealed partial class SpectatorFreecamController
                 SelectMode(SpectatorCameraRules.ResolveToggleMode(_state.Mode, SpectatorCameraMode.FirstPerson, _state.UserEnabled));
             if (SpectatorInputService.IsKeyPressedThisFrame(_settings.Camera.CinematicKey.Value))
                 SelectMode(SpectatorCameraRules.ResolveToggleMode(_state.Mode, SpectatorCameraMode.Cinematic, _state.UserEnabled));
+            if (SpectatorInputService.IsKeyPressedThisFrame(_settings.Camera.MonitorKey.Value))
+                SelectMode(SpectatorCameraRules.ResolveToggleMode(_monitorPreference.Selected ? SpectatorCameraMode.Monitor : _state.Mode, SpectatorCameraMode.Monitor, _state.UserEnabled));
 
-            if (_state.UserEnabled && _state.Mode == SpectatorCameraMode.Cinematic)
+            if (_state.UserEnabled && (_state.Mode == SpectatorCameraMode.Cinematic || _state.Mode == SpectatorCameraMode.Monitor))
             {
                 int direction = CinematicStyles.InputDirection(
                     SpectatorInputService.IsKeyPressedThisFrame(KeyCode.LeftArrow),
                     SpectatorInputService.IsKeyPressedThisFrame(KeyCode.RightArrow));
-                if (direction != 0) _settings.Camera.CinematicStyle.Value = CinematicStyles.Cycle(_settings.Camera.CinematicStyle.Value, direction);
+                if (direction != 0 && _state.Mode == SpectatorCameraMode.Monitor)
+                    SelectMonitorStyle(MonitorCameraStyles.Cycle(EffectiveMonitorStyle, direction));
+                else if (direction != 0) _settings.Camera.CinematicStyle.Value = CinematicStyles.Cycle(_settings.Camera.CinematicStyle.Value, direction);
             }
+
+            if(SpectatorInputService.IsKeyPressedThisFrame(_settings.Camera.MonitorInfraredKey.Value))
+                _settings.Camera.MonitorInfrared.Value=!_settings.Camera.MonitorInfrared.Value;
 
             float scrollDelta = _inputService.ReadScrollDelta();
             if (!Mathf.Approximately(scrollDelta, 0f))
@@ -175,6 +184,8 @@ public sealed partial class SpectatorFreecamController
 
             if (_inputService.RecenterPressed)
             {
+                _monitorDirector.Clear();
+                ClearFollowRig();
                 _recenterRequested = true;
             }
         }
@@ -196,6 +207,7 @@ public sealed partial class SpectatorFreecamController
                 return;
             }
 
+            UpdateAutomaticMonitor();
             if (!_state.UserEnabled)
             {
                 Deactivate(clearAnchor: false);
@@ -213,13 +225,14 @@ public sealed partial class SpectatorFreecamController
             }
 
             Camera camera = snapshot.SpectateCamera!;
-            if (targetChanged) ResetFollowHistory();
+            bool deathHandoff = TryStartDeathHandoff(snapshot, camera, anchor);
+            if (targetChanged && !deathHandoff) ResetFollowHistory();
             if (!_hasPose)
             {
                 InitializePoseFromCamera(camera, anchor);
             }
 
-            if (_recenterRequested || (targetChanged && _settings.RecenterOnTargetSwitch))
+            if (!deathHandoff && (_recenterRequested || (targetChanged && _settings.RecenterOnTargetSwitch)))
             {
                 Recenter(camera, anchor);
                 _recenterRequested = false;
@@ -253,6 +266,11 @@ public sealed partial class SpectatorFreecamController
     {
         try
         {
+            if(renderingCamera!=null)
+            {
+                string? interior=SpectatorInteriorVisibility.BeforeCamera(renderingCamera,_settings.Camera.DebugMonitorCamera.Value);
+                if(interior!=null) ModLog.Info(interior);
+            }
             if (renderingCamera == null || !_state.UserEnabled || !_hasPose)
             {
                 return;
@@ -279,14 +297,15 @@ public sealed partial class SpectatorFreecamController
                 return;
             }
 
-            if (targetChanged) ResetFollowHistory();
-            if (targetChanged && _settings.RecenterOnTargetSwitch)
+            bool deathHandoff = TryStartDeathHandoff(snapshot, spectateCamera, anchor);
+            if (targetChanged && !deathHandoff) ResetFollowHistory();
+            if (targetChanged && !deathHandoff && _settings.RecenterOnTargetSwitch)
             {
                 Recenter(spectateCamera, anchor);
             }
 
             ApplyCameraTransform(spectateCamera, anchor);
-            if (_state.Mode == SpectatorCameraMode.FirstPerson) LethalCompanyFirstPersonVisibility.HideForSpectatorCamera(spectateCamera);
+            if (_state.Mode == SpectatorCameraMode.FirstPerson || (_state.Mode == SpectatorCameraMode.Monitor && _monitorEyeFallback)) LethalCompanyFirstPersonVisibility.HideForSpectatorCamera(spectateCamera);
             UpdateState(snapshot);
         }
         catch (Exception ex)
@@ -334,6 +353,7 @@ public sealed partial class SpectatorFreecamController
 
         if (snapshot.SpectateCamera == null || snapshot.Anchor == null || !snapshot.HasSpectatedTarget)
         {
+            if (HoldDeathHandoffCamera(snapshot)) return false;
             if (!TrySoftPause(SpectatorFreecamIneligibleReason.MissingCameraAnchorOrTarget, snapshot))
             {
                 DeactivateWithReason(SpectatorFreecamIneligibleReason.MissingCameraAnchorOrTarget, snapshot, clearAnchor: true);
@@ -368,6 +388,7 @@ public sealed partial class SpectatorFreecamController
 
     private void EnterSpectatorState()
     {
+        _monitorPreference.Clear();
         _vanillaDistance = 1.3f;
         _entryRecenterPending = true;
         _wasSpectating = true;
@@ -388,6 +409,10 @@ public sealed partial class SpectatorFreecamController
 
     private void ResetForNonSpectator()
     {
+        ClearDeathHandoff();
+        _lastLivingTarget = default;
+        _monitorPreference.Clear();
+        ClearFollowRig();
         RestoreCamera();
         bool hadState = _wasSpectating
             || _hasPose
@@ -435,6 +460,8 @@ public sealed partial class SpectatorFreecamController
 
         if (clearAnchor)
         {
+            ClearDeathHandoff();
+            _lastLivingTarget = default;
             _anchorService.Clear();
             _hasPose = false;
             _hasSmoothedPosition = false;
@@ -624,6 +651,9 @@ public sealed partial class SpectatorFreecamController
     private void ApplyInput()
     {
         Vector2 lookDelta = _inputService.ReadLookDelta();
+        if (_settings.Camera.AutoCenter.Value && _autoCenterFrame >= 0 && lookDelta.sqrMagnitude > .0001f
+            && _state.Mode == SpectatorCameraMode.Freecam)
+            SetYawPitchFromRotation(_autoCenterRotation);
         _yaw += lookDelta.x * _settings.FreecamLookSensitivity;
         _pitch = Mathf.Clamp(_pitch - lookDelta.y * _settings.FreecamLookSensitivity, MinPitch, MaxPitch);
 
@@ -643,10 +673,11 @@ public sealed partial class SpectatorFreecamController
             }
 
             float speed = _settings.FreecamMoveSpeed * multiplier;
+            Quaternion movementRotation = _settings.Camera.AutoCenter.Value && _autoCenterFrame >= 0 ? _autoCenterRotation : rotation;
             Vector3 movement =
-                rotation * Vector3.right * moveInput.x
+                movementRotation * Vector3.right * moveInput.x
                 + Vector3.up * moveInput.y
-                + rotation * Vector3.forward * moveInput.z;
+                + movementRotation * Vector3.forward * moveInput.z;
 
             _state.Offset += movement * speed * Time.unscaledDeltaTime;
             ClampOffset();
@@ -658,11 +689,14 @@ public sealed partial class SpectatorFreecamController
 
     private void ApplyCameraTransform(Camera camera, Transform anchor)
     {
+        SpectatorCameraMode effectiveMode=_monitorPreference.Resolve(_state.Mode,_state.UserEnabled,CanUseMonitorView);
+        if(effectiveMode!=_state.Mode) SetCameraMode(effectiveMode,false);
         if ((_state.Mode == SpectatorCameraMode.Freecam || _state.Mode == SpectatorCameraMode.ThirdPerson)
             && _lastConfiguredFreeDistance != _settings.Camera.FreecamDistance.Value)
             ApplyFreecamDistance(_settings.Camera.FreecamDistance.Value);
         Vector3 representationTarget = anchor.position + _state.Offset;
-        if (_state.Mode == SpectatorCameraMode.FirstPerson || _state.Mode == SpectatorCameraMode.Cinematic)
+        if (_state.Mode == SpectatorCameraMode.FirstPerson || _state.Mode == SpectatorCameraMode.Cinematic
+            || _state.Mode == SpectatorCameraMode.Monitor)
         {
             if (!_followingReferenceCaptured)
             {
@@ -694,6 +728,9 @@ public sealed partial class SpectatorFreecamController
                 _hasSmoothedPosition = true;
                 _smoothVelocity = Vector3.zero;
                 _hasCinematicPose = false;
+                _monitorDirector.Clear();
+                ClearFollowRig();
+                (_adapter as IGameMonitorCameraAdapter)?.ClearMonitorRoom();
                 _snapCinematicPose = true;
                 _collisionDistance = -1f;
             }
@@ -736,13 +773,37 @@ public sealed partial class SpectatorFreecamController
             }
         }
 
+        // Filter only the target translation; preserve manual position/rotation and ghost/voice pose.
+        if (_state.Mode == SpectatorCameraMode.Freecam || _state.Mode == SpectatorCameraMode.ThirdPerson)
+        {
+            Vector3 correction = FollowAnchor(anchor) - anchor.position;
+            if (_state.Mode == SpectatorCameraMode.ThirdPerson && _settings.Camera.RetractAtWalls.Value
+                && _adapter is IGameMonitorCameraAdapter geometry && !geometry.IsMonitorPathClear(renderedPosition,renderedPosition+correction))
+                correction=Vector3.zero;
+            renderedPosition += correction;
+        }
         ApplySelectedView(camera, anchor, ref renderedPosition, ref renderedRotation);
+        bool autoView = _state.Mode == SpectatorCameraMode.Freecam || _state.Mode == SpectatorCameraMode.ThirdPerson
+            || (_state.Mode == SpectatorCameraMode.Cinematic && _settings.Camera.CinematicStyle.Value == 11);
+        if (autoView && (_settings.Camera.AutoCenter.Value || _state.Mode == SpectatorCameraMode.Cinematic))
+        {
+            if (_autoCenterFrame != Time.frameCount)
+            {
+                Vector2 look = CameraInputBlocked ? Vector2.zero : _inputService.ReadLookDelta() * _settings.FreecamLookSensitivity;
+                _autoCenterRotation = _autoCenter.Update(renderedRotation, _settings.Camera.AutoCenter.Value ? FollowAnchor(anchor) + Vector3.up * 1.1f - renderedPosition : Vector3.zero,
+                    look, Time.unscaledDeltaTime, true, CameraInputBlocked, _settings.Camera.FollowSpeed.Value, _state.Mode != SpectatorCameraMode.Cinematic);
+                _autoCenterFrame = Time.frameCount;
+            }
+            renderedRotation = _autoCenterRotation;
+        }
+        else { _autoCenter.Clear(); _autoCenterFrame = -1; }
         cameraTransform.position = renderedPosition;
         cameraTransform.rotation = renderedRotation;
         _state.IsActive = true;
         _state.WorldPosition = _smoothedPosition;
         _state.RenderedWorldPosition = renderedPosition;
         _state.HasWorldPose = true;
+        LethalCompanyCameraTransition.Tick();
 
         if (ModLog.IsDebugEnabled && Time.frameCount >= _nextApplyDebugFrame)
         {
@@ -785,6 +846,7 @@ public sealed partial class SpectatorFreecamController
 
     private void UpdateState(GameSpectatorSnapshot snapshot)
     {
+        RememberLivingHandoffTarget(snapshot);
         _state.TargetSlotId = snapshot.SpectatedPlayerSlotId;
         _state.TargetActualClientId = snapshot.SpectatedPlayerActualClientId;
     }

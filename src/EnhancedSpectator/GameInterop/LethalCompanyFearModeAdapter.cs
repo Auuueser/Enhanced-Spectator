@@ -13,7 +13,7 @@ namespace EnhancedSpectator.GameInterop;
 public sealed partial class LethalCompanyFearModeAdapter : IGameFearModeAdapter, IDisposable
 {
     /// <summary>Releases the renderer-only dropship source kept across moon unloads.</summary>
-    public void Dispose() { _dropshipSnapshot?.Dispose(); _originalDropship.Dispose(); _originalDropshipSounds.Dispose(); _dropshipSnapshot = null; _dropshipSource = null; }
+    public void Dispose() { _dropshipSnapshotBuild?.Dispose(); _dropshipSnapshotBuild = null; _dropshipSnapshot?.Dispose(); _originalDropship.Dispose(); _originalDropshipSounds.Dispose(); _dropshipSnapshot = null; _dropshipSource = null; _expandedSources.Clear(); _originalItems.Clear(); _supportedPrefabs.Clear(); }
     /// <inheritdoc />
     public bool TryGetLocalDeadPlayerIdentity(out ulong clientId, out ulong slotId)
     {
@@ -129,6 +129,11 @@ public sealed partial class LethalCompanyFearModeAdapter : IGameFearModeAdapter,
     public bool TryGetVisualSource(string modelKey, out FearVisualSource? source)
     {
         source = null;
+        if (modelKey == FearModelIdentityRules.Dropship)
+        {
+            _dropshipRequested = true;
+            ((IGameFearCatalogPreparationAdapter)this).TickCatalogPreparation();
+        }
         if (_expandedSources.TryGetValue(modelKey, out source) && source.HierarchyRoot != null) return true;
         if (!FearModeRules.IsValidModelKey(modelKey))
         {

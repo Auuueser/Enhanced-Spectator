@@ -167,6 +167,14 @@ public sealed partial class FearModeVisualService : IDisposable
         for (int index = 0; index < spectators.Count; index++)
         {
             RemoteSpectatorInfo spectator = spectators[index];
+            if (!LethalCompanyModelVisibility.Allows(spectator.SpectatorClientId) || spectator.PoseState?.ModelStowed == true
+                || LethalCompanyModelVisibility.ShouldHideAutoCentering(spectator))
+            {
+                // Keep a completed model for instant restoration; no building or fade work while stowed.
+                if (_remoteVisuals.TryGetValue(spectator.SpectatorClientId, out var stowed)) stowed.SetVisible(false);
+                _activeRemoteIds.Add(spectator.SpectatorClientId);
+                continue;
+            }
             FearModeSelectionState? selection = _fearState.TryGetSelection(
                 spectator.SpectatorClientId,
                 out FearModeSelectionState selected)
@@ -199,7 +207,7 @@ public sealed partial class FearModeVisualService : IDisposable
                     visual = created;
                     visual.SeedFadeOpacity(previousOpacity);
                     _remoteVisuals[spectator.SpectatorClientId] = visual;
-                    ModLog.Info($"Fear visual created for client {spectator.SpectatorClientId}: model={visual.ModelKey}, {reason}.");
+                    ModLog.Debug($"Fear visual created for client {spectator.SpectatorClientId}: model={visual.ModelKey}, {reason}.");
                 }
                 else if (visual == null) continue;
                 // Keep the previous complete model while its replacement is prepared.
@@ -252,6 +260,7 @@ public sealed partial class FearModeVisualService : IDisposable
         if (!cameraState.IsThirdPerson
             || !cameraState.HasWorldPose
             || !_gameAdapter.TryGetLocalDeadPlayerIdentity(out ulong clientId, out _)
+            || !LethalCompanyModelVisibility.Allows(clientId)
             || !_fearState.TryGetSelection(clientId, out FearModeSelectionState selection)
             || !_catalog.TryGetVisualSource(selection.ModelKey, out FearVisualSource? source)
             || source == null
@@ -279,7 +288,7 @@ public sealed partial class FearModeVisualService : IDisposable
                 _localVisual.SeedFadeOpacity(previousOpacity);
                 _localVisualClientId = clientId;
                 _hasLocalVisualClientId = true;
-                ModLog.Info($"Local fear visual created: model={_localVisual.ModelKey}, {reason}.");
+                ModLog.Debug($"Local fear visual created: model={_localVisual.ModelKey}, {reason}.");
             }
             else if (_localVisual == null) return;
         }

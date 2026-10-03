@@ -57,6 +57,9 @@ public sealed class SpectatorCameraState
     /// </summary>
     public bool IsThirdPerson => IsActive && Mode == SpectatorCameraMode.ThirdPerson;
 
+    /// <summary>Automatic shots temporarily stow the owner's visual without changing their selected model.</summary>
+    public bool ModelStowed => IsActive && UserEnabled && SpectatorCameraRules.StowsModel(Mode);
+
     /// <summary>Actual local model center relative to the logical ghost, in representation coordinates.</summary>
     public Vector3 LocalModelCenter { get; internal set; }
     /// <summary>Radius of the local model bounds, including the configured scale.</summary>

@@ -16,7 +16,6 @@ public sealed partial class FearModelThumbnailService : IFearModelThumbnailProvi
     private const int ThumbnailLayer = 31;
     private const int ThumbnailSize = 256;
     private const int MaxCachedThumbnails = 160; // Bounded full original catalog (~40 MiB RGBA).
-    private int _prewarmIndex;
     private readonly Dictionary<string, int> _retryAfter = new Dictionary<string, int>(StringComparer.Ordinal);
     private readonly LinkedList<string> _lru = new LinkedList<string>();
     private readonly Dictionary<string, LinkedListNode<string>> _lruNodes = new Dictionary<string, LinkedListNode<string>>(StringComparer.Ordinal);
@@ -26,9 +25,7 @@ public sealed partial class FearModelThumbnailService : IFearModelThumbnailProvi
     private readonly IGameDetachedHeadVisualSourceAdapter _detachedHeadSource;
     private readonly Dictionary<string, Sprite> _sprites =
         new Dictionary<string, Sprite>(StringComparer.Ordinal);
-    private readonly HashSet<string> _queued =
-        new HashSet<string>(StringComparer.Ordinal);
-    private readonly Queue<string> _queue = new Queue<string>();
+    private readonly FearThumbnailRequests _requests = new FearThumbnailRequests();
     private GameObject? _cameraObject;
     private Camera? _camera;
     private HDAdditionalCameraData? _hdCameraData;
@@ -55,21 +52,20 @@ public sealed partial class FearModelThumbnailService : IFearModelThumbnailProvi
     public int Revision { get; private set; }
 
     /// <inheritdoc />
+    public void BeginVisiblePage()
+    {
+        _requests.BeginVisiblePage();
+    }
+
+    /// <inheritdoc />
     public void Request(string modelKey)
     {
-        if (string.IsNullOrWhiteSpace(modelKey)) return;
+        if (_disposed || string.IsNullOrWhiteSpace(modelKey)) return;
+        if (TryGet(modelKey, out _))
+        { if (_lruNodes.TryGetValue(modelKey, out var recent)) { _lru.Remove(recent); _lru.AddLast(recent); } return; }
+        if (TryLoadCached(modelKey)) return;
         if (_retryAfter.TryGetValue(modelKey, out int retry) && Time.frameCount < retry) return;
-        if (_lruNodes.TryGetValue(modelKey, out var recent)) { _lru.Remove(recent); _lru.AddLast(recent); }
-        if (_disposed
-            || _queue.Count >= 18
-            || string.IsNullOrWhiteSpace(modelKey)
-            || _sprites.ContainsKey(modelKey)
-            || !_queued.Add(modelKey))
-        {
-            return;
-        }
-
-        _queue.Enqueue(modelKey);
+        if (_requests.Request(modelKey)) StartCacheRead(modelKey);
     }
 
     /// <inheritdoc />
@@ -77,14 +73,14 @@ public sealed partial class FearModelThumbnailService : IFearModelThumbnailProvi
     {
         if (!string.IsNullOrWhiteSpace(modelKey)
             && _sprites.TryGetValue(modelKey, out Sprite value)
-            && value != null)
+            && value != null && value.texture != null)
         {
             sprite = value;
             return true;
         }
 
-        sprite = _fallbackSprite;
-        return sprite != null;
+        sprite = null;
+        return false;
     }
 
     /// <inheritdoc />
@@ -97,19 +93,17 @@ public sealed partial class FearModelThumbnailService : IFearModelThumbnailProvi
     /// <inheritdoc />
     public void Tick()
     {
-        if (!FearVisualWorkSchedule.Shared.TryThumbnail(Time.frameCount)) return;
-        if (!_disposed && _catalog.ModelKeys.Count > 1)
-        {
-            _prewarmIndex %= _catalog.ModelKeys.Count;
-            Request(_catalog.ModelKeys[_prewarmIndex++]);
-        }
-        if (_disposed || _queue.Count == 0)
+        if (_disposed || !_requests.HasPending)
         {
             return;
         }
 
-        string modelKey = _queue.Dequeue();
-        _queued.Remove(modelKey);
+        if (!FearVisualWorkSchedule.Shared.TryThumbnail(Time.frameCount)) return;
+
+        if (!_requests.TryTake(out string modelKey)) return;
+        if (_cacheReads.TryGetValue(modelKey, out var read) && !read.IsCompleted) return;
+        if (TryLoadCached(modelKey)) return;
+        if (_cacheReads.ContainsKey(modelKey)) return; // A completed disk hit can be waiting for its upload budget.
         _retryAfter[modelKey] = Time.frameCount + 300;
         TryRender(modelKey);
     }
@@ -141,8 +135,10 @@ public sealed partial class FearModelThumbnailService : IFearModelThumbnailProvi
         _retryAfter.Clear();
         _lru.Clear();
         _lruNodes.Clear();
-        _queue.Clear();
-        _queued.Clear();
+        _requests.BeginVisiblePage();
+        _cacheReads.Clear();
+        _cacheChecked.Clear();
+        _firstRequested.Clear();
         if (_fallbackSprite != null) UnityEngine.Object.Destroy(_fallbackSprite);
         if (_fallbackTexture != null) UnityEngine.Object.Destroy(_fallbackTexture);
         if (_cameraObject != null) UnityEngine.Object.Destroy(_cameraObject);
@@ -171,6 +167,8 @@ public sealed partial class FearModelThumbnailService : IFearModelThumbnailProvi
                 || visual == null)
             {
                 ModLog.Debug($"Fear card thumbnail clone rejected: model={modelKey}, reason={reason}.");
+                if (reason == "catalog visual source unavailable" || reason == "detached-head template unavailable")
+                    _retryAfter[modelKey] = Time.frameCount + 15;
                 return;
             }
 
@@ -212,27 +210,9 @@ public sealed partial class FearModelThumbnailService : IFearModelThumbnailProvi
             Color[] blackBackground = CapturePixels(target, Color.black);
             Color[] whiteBackground = CapturePixels(target, Color.white);
             Texture2D texture = ComposeThumbnail(modelKey, blackBackground, whiteBackground);
-            Sprite sprite = Sprite.Create(
-                texture,
-                new Rect(0f, 0f, ThumbnailSize, ThumbnailSize),
-                new Vector2(0.5f, 0.5f),
-                ThumbnailSize);
-            sprite.name = $"Enhanced Spectator Fear Card {modelKey}";
-            if (_sprites.TryGetValue(modelKey, out var replaced) && replaced != null)
-            { UnityEngine.Object.Destroy(replaced.texture); UnityEngine.Object.Destroy(replaced); _sprites.Remove(modelKey); }
-            if (_lruNodes.TryGetValue(modelKey, out var replacedNode)) { _lru.Remove(replacedNode); _lruNodes.Remove(modelKey); }
-            while (_sprites.Count >= MaxCachedThumbnails && _lru.First != null)
-            {
-                string oldest = _lru.First.Value;
-                _lru.RemoveFirst(); _lruNodes.Remove(oldest);
-                if (_sprites.TryGetValue(oldest, out var oldSprite) && oldSprite != null)
-                { UnityEngine.Object.Destroy(oldSprite.texture); UnityEngine.Object.Destroy(oldSprite); }
-                _sprites.Remove(oldest);
-            }
-            _retryAfter.Remove(modelKey);
-            _sprites[modelKey] = sprite;
-            _lruNodes[modelKey] = _lru.AddLast(modelKey);
-            Revision++;
+            StoreThumbnail(modelKey, texture);
+            // Pose audit images are intentionally temporary and must not poison normal previews.
+            if (!_auditPoseOverride.HasValue) _ = _diskCache.Write(modelKey, texture.GetRawTextureData());
             ModLog.Debug($"Fear card thumbnail rendered from safe model data: model={modelKey}.");
         }
         catch (Exception ex)
@@ -499,6 +479,7 @@ public sealed partial class FearModelThumbnailService : IFearModelThumbnailProvi
         _fallbackTexture = new Texture2D(size, size, TextureFormat.RGBA32, mipChain: false)
         {
             name = "Enhanced Spectator Default Ghost Card",
+            hideFlags = HideFlags.DontUnloadUnusedAsset,
             filterMode = FilterMode.Point,
             wrapMode = TextureWrapMode.Clamp
         };
@@ -531,5 +512,6 @@ public sealed partial class FearModelThumbnailService : IFearModelThumbnailProvi
             new Vector2(0.5f, 0.5f),
             size);
         _fallbackSprite.name = "Enhanced Spectator Default Ghost Card";
+        _fallbackSprite.hideFlags = HideFlags.DontUnloadUnusedAsset;
     }
 }

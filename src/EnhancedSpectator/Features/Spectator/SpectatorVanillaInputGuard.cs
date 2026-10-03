@@ -62,8 +62,10 @@ public static class SpectatorVanillaInputGuard
     /// <summary>
     /// Gets whether vanilla target switching should be suppressed for the current frame.
     /// </summary>
-    public static bool ShouldSuppressTargetSwitchInput(out string reason)
+    public static bool ShouldSuppressTargetSwitchInput(out string reason, bool automatic = false)
     {
+        if (SpectatorPointerCapture.IsActive && !automatic && _internalTargetSwitchDepth <= 0)
+        { reason = "viewer-list pointer is active"; return true; }
         bool ascendKeyHeld = false;
         bool descendKeyHeld = false;
         if (_freecamWantsVerticalInput && _internalTargetSwitchDepth <= 0)
@@ -85,6 +87,6 @@ public static class SpectatorVanillaInputGuard
     /// </summary>
     public static bool ShouldSuppressGameplayInteractInput()
     {
-        return _quickMenuBlocksInput;
+        return _quickMenuBlocksInput || SpectatorPointerCapture.IsActive;
     }
 }

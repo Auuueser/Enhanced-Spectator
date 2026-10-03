@@ -1,5 +1,9 @@
 # Third-party notices
 
+## Camera Agent runtime
+
+The camera agent builds Cinemachine 2.9.7 from the hash-pinned official Unity package. This runtime assembly uses the Unity Companion License and includes Clipper under the Boost Software License. Namespace and caller-clock adaptations, exact licenses and upstream notices are preserved in [tools/camera-agent-runtime](tools/camera-agent-runtime/THIRD-PARTY-NOTICES.md). Distribute that notice and its `licenses/` directory together with `EnhancedSpectator.CameraRuntime.dll`. Game-supplied Unity assemblies are not included.
+
 Chinese model labels and player-name repair reference [LC-Chinese-Project](https://github.com/Auuueser/LC-Chinese-Project).
 
 MIT License

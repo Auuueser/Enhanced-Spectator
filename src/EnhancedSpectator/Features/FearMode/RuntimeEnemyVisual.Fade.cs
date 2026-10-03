@@ -21,7 +21,7 @@ public sealed partial class RuntimeEnemyVisual
     public void BeginCameraFade(bool enabled)
     {
         RestoreCameraFade();
-        if (_disposed || _root == null) return;
+        if (_disposed || _root == null || !_root.activeInHierarchy) return;
         float opacity = _targetFade.Update(_root.transform.position, enabled, _cameraFade?.Ready == true, ModelKey, _root.transform, _fadeEnvelope);
         if (enabled) _cameraFade?.Begin(opacity);
     }

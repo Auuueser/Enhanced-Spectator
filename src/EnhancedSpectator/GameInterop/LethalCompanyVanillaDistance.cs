@@ -15,12 +15,13 @@ internal static class LethalCompanyVanillaDistance
             || player.spectateCameraPivot == null || round.spectateCamera == null) return false;
         // Preserve vanilla's 0.1m ray extension and 0.25m wall margin.
         var pivot = player.spectateCameraPivot;
-        var ray = new Ray(pivot.position, -pivot.forward);
+        Vector3 origin = pivot.position;
+        var ray = new Ray(origin, -pivot.forward);
         float actual = Physics.Raycast(ray, out var hit, distance + .1f, player.walkableSurfacesNoPlayersMask, QueryTriggerInteraction.Ignore)
             ? Mathf.Max(0f, hit.distance - .25f) : distance;
         var camera = round.spectateCamera.transform;
         camera.position = ray.GetPoint(actual);
-        if (actual > .0001f) camera.LookAt(pivot); else camera.rotation = pivot.rotation;
+        if (actual > .0001f) camera.LookAt(origin); else camera.rotation = pivot.rotation;
         return true;
     }
 }

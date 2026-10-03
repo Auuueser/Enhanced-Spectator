@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using EnhancedSpectator.Features.FearMode;
 using EnhancedSpectator.Logging;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -12,26 +13,44 @@ internal sealed class OriginalDropshipVisualSource : IDisposable
 {
     private Task<V81DropshipData>? _read;
     private bool _finished;
+    private IncrementalVisualWork? _build;
+    private int _buildFrame = -1;
+    internal bool Finished => _finished;
     private GameObject? _root;
     private FearVisualSource? _source;
     private readonly List<UnityEngine.Object> _owned = new List<UnityEngine.Object>();
+    private readonly Func<string, V81DropshipData> _reader;
+
+    internal OriginalDropshipVisualSource(Func<string, V81DropshipData>? reader = null) =>
+        _reader = reader ?? V81DropshipData.Read;
 
     internal FearVisualSource? Poll()
     {
         if (_finished) return _source;
-        if (_read == null)
+        if (_read == null && _build == null)
         {
             string directory = Application.dataPath;
-            _read = Task.Run(() => V81DropshipData.Read(directory));
+            _read = Task.Run(() => _reader(directory));
             return null;
         }
-        if (!_read.IsCompleted) return null;
-        _finished = true;
         try
         {
-            var data = _read.GetAwaiter().GetResult();
-            Build(data);
-            ModLog.Info("Mini dropship available before moon landing: verified local V81 visual ranges, 9 renderers; no delivery components.");
+            if (_build == null)
+            {
+                if (!_read!.IsCompleted) return null;
+                var data = _read.GetAwaiter().GetResult();
+                _read = null;
+                _build = new IncrementalVisualWork(BuildSteps(data).GetEnumerator());
+            }
+            if (_buildFrame == Time.frameCount) return null;
+            _buildFrame = Time.frameCount;
+            // One texture, material or mesh per frame. Unity operations stay on the main thread.
+            _build.Advance(1.0, 1);
+            if (!_build.Done) return null;
+            if (_build.Failure != null) throw _build.Failure;
+            _build = null;
+            _finished = true;
+            ModLog.Debug("Mini dropship available before moon landing: verified local V81 visual ranges, 9 renderers; no delivery components.");
         }
         catch (Exception ex)
         {
@@ -42,7 +61,7 @@ internal sealed class OriginalDropshipVisualSource : IDisposable
         return _source;
     }
 
-    private void Build(V81DropshipData data)
+    private IEnumerable<bool> BuildSteps(V81DropshipData data)
     {
         Shader shader = Shader.Find("HDRP/Lit") ?? throw new InvalidOperationException("HDRP/Lit unavailable");
         var textures = new Texture2D[data.textures.Length];
@@ -57,6 +76,7 @@ internal sealed class OriginalDropshipVisualSource : IDisposable
             texture.LoadRawTextureData(data.Bytes[info.chunk]);
             texture.Apply(false, true);
             textures[i] = texture;
+            yield return true;
         }
         var materials = new Material[data.materials.Length];
         for (int i = 0; i < materials.Length; i++)
@@ -94,6 +114,7 @@ internal sealed class OriginalDropshipVisualSource : IDisposable
                 material.renderQueue = (int)RenderQueue.Transparent;
             }
             materials[i] = material;
+            yield return true;
         }
         _root = new GameObject("Enhanced Spectator original dropship source");
         _root.SetActive(false);
@@ -138,6 +159,7 @@ internal sealed class OriginalDropshipVisualSource : IDisposable
             for (int i = 0; i < slots.Length; i++) slots[i] = materials[info.materials[i]];
             renderer.sharedMaterials = slots;
             renderers.Add(renderer);
+            yield return true;
         }
         if (hull == null) throw new InvalidOperationException("Dropship hull missing");
         _source = new FearVisualSource(hull, hull, normalizeRootPose: true,
@@ -157,6 +179,7 @@ internal sealed class OriginalDropshipVisualSource : IDisposable
     public void Dispose()
     {
         _finished = true;
+        _build?.Dispose(); _build = null;
         _source = null;
         if (_root != null) UnityEngine.Object.Destroy(_root);
         foreach (var value in _owned) if (value != null) UnityEngine.Object.Destroy(value);

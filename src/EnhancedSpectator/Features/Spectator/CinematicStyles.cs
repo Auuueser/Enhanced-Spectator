@@ -6,16 +6,17 @@ namespace EnhancedSpectator.Features.Spectator;
 /// <summary>Stable style IDs and continuous paths; no game state, FOV changes or random cuts.</summary>
 internal static class CinematicStyles
 {
-    internal const int Count = 10;
+    internal const int Count = 12;
     internal const float BlendSeconds = 2f;
-    private static readonly string[] Chinese = { "经典长镜头", "英雄环绕", "平行追踪", "正面引领", "肩后追随", "缓推特写", "升降揭示", "高位巡航", "低位掠行", "弧线揭幕" };
-    private static readonly string[] English = { "Classic sequence", "Hero orbit", "Lateral tracking", "Leading shot", "Shoulder pursuit", "Dolly intimacy", "Crane reveal", "High orbit", "Low glide", "Arc reveal" };
+    private static readonly string[] Chinese = { "经典长镜头", "英雄环绕", "平行追踪", "正面引领", "肩后追随", "缓推特写", "升降揭示", "高位巡航", "低位掠行", "弧线揭幕", "闪灵跟随", "居中跟随" };
+    private static readonly string[] English = { "Classic sequence", "Hero orbit", "Lateral tracking", "Leading shot", "Shoulder pursuit", "Dolly intimacy", "Crane reveal", "High orbit", "Low glide", "Arc reveal", "Shining follow", "Centered follow" };
     internal static int Valid(int style) => style >= 0 && style < Count ? style : 0;
-    internal static int Cycle(int style, int direction) => (Valid(style) + Math.Sign(direction) + Count) % Count;
+    internal static readonly int[] Order = { 10, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11 };
+    internal static int Cycle(int style, int direction) => Order[(Array.IndexOf(Order, Valid(style)) + Math.Sign(direction) + Count) % Count];
     internal static string Name(int style, bool chinese) => (chinese ? Chinese : English)[Valid(style)];
-    internal static bool FollowsHeading(int style) => style == 2 || style == 3 || style == 4 || style == 8;
+    internal static bool FollowsHeading(int style) => style == 2 || style == 3 || style == 4 || style == 8 || style == 10 || style == 11;
     internal static bool IsStyleKey(KeyCode key) => key == KeyCode.LeftArrow || key == KeyCode.RightArrow;
-    internal static bool ReservesKey(SpectatorCameraMode? mode, KeyCode key) => mode == SpectatorCameraMode.Cinematic && IsStyleKey(key);
+    internal static bool ReservesKey(SpectatorCameraMode? mode, KeyCode key) => (mode == SpectatorCameraMode.Cinematic || mode == SpectatorCameraMode.Monitor || mode == SpectatorCameraMode.Director) && IsStyleKey(key);
     internal static int InputDirection(bool left, bool right) => left == right ? 0 : right ? 1 : -1;
 
     internal static CinematicShotPath.Shot Sample(int style, double phase)
@@ -28,17 +29,33 @@ internal static class CinematicStyles
         // elevated circle, low stabilizer and an offset rail. Each loop has continuous velocity.
         return Valid(style) switch
         {
-            1 => new CinematicShotPath.Shot((float)p, .95f + .07f*c, .48f + .24f*lift, 1.35f, 0),
-            2 => Rail(1f, .35f*s, 1.3f, 1.3f, -.16f),
-            3 => Rail(.18f*s, 1.05f + .12f*c, 1.5f, 1.35f, .10f),
-            4 => Rail(.35f + .05f*s, -.88f - .08f*c, 1.7f, 1.3f, -.13f),
-            5 => Rail(.06f*s, .65f + .65f*(1-lift), 1.25f, 1.4f, .03f),
-            6 => new CinematicShotPath.Shot(-30 + 60*lift, .85f + .35f*lift, .55f + 4.2f*lift, 1.05f, .10f*s),
-            7 => new CinematicShotPath.Shot(-(float)p, 1.25f, 5f + .5f*s, .85f, .10f),
-            8 => Rail(.6f*s, -.95f, .30f + .08f*c, .8f, .14f*s),
-            9 => Rail(.95f*s, .8f, .95f + .45f*lift, 1.2f, -.12f*s),
-            _ => CinematicShotPath.Sample(phase)
+            1 => new CinematicShotPath.Shot((float)p, .8f + .2f*c, .35f + 1.5f*lift, 1.35f, .18f*s),
+            2 => Rail(.9f, .85f*s, 1.15f + .35f*lift, 1.3f, -.26f),
+            3 => Rail(.45f*s, .95f + .3f*c, 1.2f, 1.35f, .22f),
+            4 => Rail(.4f + .18f*s, -.8f - .18f*c, 1.65f, 1.3f, -.25f),
+            5 => Rail(.2f*s, .5f + .9f*(1-lift), 1.15f, 1.4f, .12f*s),
+            6 => new CinematicShotPath.Shot(-70 + 140*lift, .65f + .65f*lift, .4f + 5.5f*lift, 1.05f, .24f*s),
+            7 => new CinematicShotPath.Shot(-(float)p, 1.1f + .25f*c, 4.5f + 1.5f*s, .85f, .23f),
+            8 => Rail(.9f*s, -.8f, .32f + .12f*c, .8f, .25f*s),
+            10 => Rail(0, -1f, 1.3f, 1.3f, 0),
+            11 => Rail(0, -1f, 1.3f, 1.3f, 0),
+            9 => Rail(1.3f*s, .6f, .65f + 1.4f*lift, 1.2f, -.26f*s),
+            _ => ActionSequence(phase)
         };
+    }
+
+    internal static Vector3 RearStation(Vector3 body, Vector3 forward, float distance, float height)
+    {
+        forward.y = 0;
+        if (forward.sqrMagnitude < .0001f) forward = Vector3.forward;
+        return body - forward.normalized * distance + Vector3.up * height;
+    }
+
+    private static CinematicShotPath.Shot ActionSequence(double phase)
+    {
+        var shot = CinematicShotPath.Sample(phase);
+        return new CinematicShotPath.Shot(shot.Yaw, shot.Radius, .3f + shot.Height * 1.25f,
+            shot.FocusHeight, shot.Composition * 1.6f);
     }
 
     private static CinematicShotPath.Shot Rail(float x, float z, float height, float focus, float composition) =>
@@ -46,11 +63,12 @@ internal static class CinematicStyles
 
     internal static float AngleDelta(float from, float to) => ((to - from) % 360 + 540) % 360 - 180;
 
-    internal static float FollowHeading(float current, float target, float elapsed)
+    internal static float FollowHeading(float current, float target, float elapsed, bool action = false)
     {
         float dt = Math.Max(0, Math.Min(.1f, elapsed));
-        float step = AngleDelta(current, target) * (1 - (float)Math.Exp(-dt / .9f));
-        return current + Math.Max(-45*dt, Math.Min(45*dt, step));
+        float step = AngleDelta(current, target) * (1 - (float)Math.Exp(-dt / (action ? .35f : .9f)));
+        float rate = action ? 120f : 45f;
+        return current + Math.Max(-rate*dt, Math.Min(rate*dt, step));
     }
 
     internal static CinematicShotPath.Shot WithYaw(CinematicShotPath.Shot shot, float yaw) =>

@@ -122,12 +122,7 @@ public sealed class SpectatorPresenceService : ISpectatorPresenceProvider
     {
         _nextSpectators.Clear();
         _candidateSpectators.Clear();
-        int maxVisible = Math.Max(0, _config.MaxFloatingHeadsVisible.Value);
-        if (maxVisible == 0)
-        {
-            return;
-        }
-
+        // Visibility budget is now applied once at rendering, ranked by distance and shared with local avatars.
         foreach (SpectatorTargetState remoteTarget in remoteTargets)
         {
             if (!RemoteSpectatorVisibilityRules.IsRemoteSpectator(remoteTarget, localClientId))
@@ -162,7 +157,7 @@ public sealed class SpectatorPresenceService : ISpectatorPresenceProvider
         }
 
         _candidateSpectators.Sort((left, right) => left.SpectatorClientId.CompareTo(right.SpectatorClientId));
-        int visibleCount = Math.Min(maxVisible, _candidateSpectators.Count);
+        int visibleCount = _candidateSpectators.Count;
         for (int index = 0; index < visibleCount; index++)
         {
             RemoteSpectatorInfo spectator = _candidateSpectators[index];

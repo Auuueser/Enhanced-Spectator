@@ -2,7 +2,7 @@
   <PropertyGroup>
     <TargetFramework>netstandard2.1</TargetFramework>
     <AssemblyName>EnhancedSpectator</AssemblyName>
-    <Version>0.3.5</Version>
+    <Version>0.4.0</Version>
     <RootNamespace>EnhancedSpectator</RootNamespace>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
@@ -26,11 +26,16 @@
     <EmbeddedResource Include="GameInterop\V81DropshipLayout.json" />
     <EmbeddedResource Include="GameInterop\V81DropshipAudio.json" />
     <EmbeddedResource Include="Resources\nativefade.bundle" />
+    <EmbeddedResource Include="Resources\thermal.bundle" />
     <InternalsVisibleTo Include="EnhancedSpectator.Tests" />
     <!-- HDRP renderer-list ABI must match V81's installed Unity, not the old 2021 stubs. -->
     <Reference Include="$(ManagedDir)\UnityEngine*.dll" Private="false" />
+    <Reference Include="EnhancedSpectator.CameraRuntime" HintPath="..\..\libs\camera-agent\EnhancedSpectator.CameraRuntime.dll" Private="true" />
+    <Reference Include="Unity.Mathematics" HintPath="$(ManagedDir)\Unity.Mathematics.dll" Private="false" />
+    <Reference Include="Unity.AI.Navigation" HintPath="$(ManagedDir)\Unity.AI.Navigation.dll" Private="false" />
     <Reference Include="MoreCompany" HintPath="$(MoreCompanyPath)" Private="false" />
     <Reference Include="Unity.Animation.Rigging" HintPath="$(ManagedDir)\Unity.Animation.Rigging.dll" Private="false" />
+    <Reference Include="DunGen" HintPath="$(ManagedDir)\DunGen.dll" Private="false" />
     <Reference Include="Assembly-CSharp"
                HintPath="$(ManagedDir)\Assembly-CSharp.dll"
                Private="false"
@@ -63,6 +68,7 @@
                Condition="Exists('$(ManagedDir)\Unity.RenderPipelines.Core.Runtime.dll')" />
     <Reference Include="Unity.RenderPipelines.HighDefinition.Runtime"
                HintPath="$(ManagedDir)\Unity.RenderPipelines.HighDefinition.Runtime.dll"
+               Publicize="true"
                Private="false"
                Condition="Exists('$(ManagedDir)\Unity.RenderPipelines.HighDefinition.Runtime.dll')" />
     <Reference Include="DissonanceVoip"
@@ -76,6 +82,7 @@
   </ItemGroup>
 
   <Target Name="CheckOptionalAdapterBuildReference" BeforeTargets="ResolveReferences">
+    <Error Condition="!Exists('..\..\libs\camera-agent\EnhancedSpectator.CameraRuntime.dll')" Text="Prepare the pinned Cinemachine runtime with tools/camera-agent-runtime/Prepare.ps1 before building. See BUILDING.md." />
     <Error Condition="!Exists('$(MoreCompanyPath)')" Text="Building the optional MoreCompany adapter requires a local MoreCompany.dll. Set -p:MoreCompanyPath to that file. Do not redistribute it with this plugin." />
   </Target>
 </Project>

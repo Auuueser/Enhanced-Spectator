@@ -64,7 +64,7 @@ public sealed partial class LethalCompanyFearQuickMenuAdapter
                     else
                     {
                         var binding = conflict >= 0 ? _options.Hotkeys.Bindings[conflict] : null;
-                        _hotkeyFeedback = binding == null ? (chinese ? "此键不可用" : "Unsupported key")
+                        _hotkeyFeedback = conflict == -2 ? (chinese ? "保存失败，请检查配置文件权限" : "Save failed; check config permissions") : binding == null ? (chinese ? "此键不可用" : "Unsupported key")
                             : (chinese ? "已用于：" + binding.Chinese : "In use: " + binding.English);
                     }
                     _hotkeyFeedbackUntil = Time.unscaledTime + 3f; break;

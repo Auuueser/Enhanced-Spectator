@@ -10,6 +10,21 @@ public static class FearQuickMenuRules
     /// <summary>Maximum model cards shown on one page.</summary>
     public const int PageSize = 9;
 
+    /// <summary>Requests the whole page before publishing any of its cards.</summary>
+    public static bool PreparePageThumbnails(
+        IReadOnlyList<FearQuickMenuModelEntry> entries, int pageIndex, IFearModelThumbnailProvider thumbnails)
+    {
+        bool ready = true;
+        int first = pageIndex * PageSize;
+        for (int index = first; index < entries.Count && index < first + PageSize; index++)
+        {
+            string key = entries[index].ModelKey;
+            thumbnails.Request(key);
+            if (!thumbnails.TryGet(key, out _) && thumbnails.IsPending(key)) ready = false;
+        }
+        return ready;
+    }
+
     /// <summary>Gets whether the ESC entry icon should be visible.</summary>
     public static bool ShouldShowEntry(
         bool configured,
@@ -461,11 +476,20 @@ public interface IFearModelThumbnailProvider : IDisposable
     /// <summary>Changes whenever a requested thumbnail becomes available.</summary>
     int Revision { get; }
 
+    /// <summary>Discards pending off-page requests while retaining completed thumbnails.</summary>
+    void BeginVisiblePage();
+
     /// <summary>Queues a model thumbnail without duplicating work.</summary>
     void Request(string modelKey);
 
-    /// <summary>Gets a rendered model thumbnail or the safe Default fallback.</summary>
+    /// <summary>Uses spare menu demand to prepare an off-page preview without displacing a full cache.</summary>
+    void Prefetch(string modelKey);
+
+    /// <summary>Gets an actual rendered or cached model thumbnail; never substitutes the entry icon.</summary>
     bool TryGet(string modelKey, out UnityEngine.Sprite? sprite);
+
+    /// <summary>Whether a missing preview is still being prepared for initial page presentation.</summary>
+    bool IsPending(string modelKey);
 
     /// <summary>Gets the fixed pixel icon used only by the quick-menu entry button.</summary>
     bool TryGetEntryIcon(out UnityEngine.Sprite? sprite);

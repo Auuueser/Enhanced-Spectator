@@ -1239,7 +1239,7 @@ public sealed class EnhancedSpectatorConfig
             "Logging",
             "EnableDebugLogging",
             false,
-            "Enables verbose Enhanced Spectator debug logs.");
+            "Enables runtime diagnostics (models, fade, camera, audio and network). Live changes apply immediately; up to 20 messages/second. Off keeps startup and rate-limited faults. 运行诊断总开关，即时生效；默认关闭，仅保留启动信息和限频故障日志。");
 
         ConfigEntry<bool> enableNetworking = config.Bind(
             "Networking",
@@ -1593,7 +1593,7 @@ public sealed class EnhancedSpectatorConfig
             "FloatingHead",
             "MaxFloatingHeadsVisible",
             8,
-            EnhancedSpectatorText.Select(useChineseText, "Maximum remote spectator visuals shown at once. Set to 0 to hide them.", "同时显示的远程观战者外观上限；设为 0 可全部隐藏。"));
+            EnhancedSpectatorText.Select(useChineseText, "Legacy setting (unused). Use Options > Models > Visible model limit / Hide all spectator models.", "旧配置（不再生效）。请使用选项 → 模型中的显示上限／隐藏所有观战模型。"));
 
         ConfigEntry<FloatingHeadVisualStyle> visualStyle = config.Bind(
             "FloatingHead",

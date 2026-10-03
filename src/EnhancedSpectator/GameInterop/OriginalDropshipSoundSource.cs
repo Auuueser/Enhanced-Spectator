@@ -54,7 +54,7 @@ internal sealed class OriginalDropshipSoundSource : IDisposable
             }
             foreach (var request in _requests) request.Dispose();
             _requests = null; _finished = true;
-            ModLog.Info("Original delivery-rocket audio available before landing: 4 verified clips.");
+            ModLog.Debug("Original delivery-rocket audio available before landing: 4 verified clips.");
         }
         catch (Exception ex)
         {

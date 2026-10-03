@@ -64,14 +64,14 @@ public sealed class LocalSpectatorAvatarVisualService : IDisposable
         try
         {
             SpectatorCameraState state = _spectatorModule.CameraState;
-            if (!state.IsThirdPerson || !state.HasWorldPose)
+            if (_config.Camera.HideAllModels.Value || !state.IsThirdPerson || !state.HasWorldPose)
             {
                 ClearVisual();
                 return;
             }
 
             if (_gameAdapter.TryGetLocalPlayerIdentity(out ulong clientId, out _)
-                && _fearVisualOverrides?.IsFearVisualActive(clientId) == true)
+                && (!LethalCompanyModelVisibility.Allows(clientId) || _fearVisualOverrides?.IsFearVisualActive(clientId) == true))
             {
                 ClearVisual();
                 return;
@@ -162,7 +162,7 @@ public sealed class LocalSpectatorAvatarVisualService : IDisposable
                 _config.NameTagHeightOffset.Value,
                 _config.NameTagMaxDistance.Value,
                 string.Empty);
-            ModLog.Info("Local third-person ghost visual created: source=RuntimeDetachedHead.");
+            ModLog.Debug("Local third-person ghost visual created: source=RuntimeDetachedHead.");
             return true;
         }
 
@@ -179,7 +179,7 @@ public sealed class LocalSpectatorAvatarVisualService : IDisposable
             _config.NameTagHeightOffset.Value,
             _config.NameTagMaxDistance.Value,
             string.Empty);
-        ModLog.Info("Local third-person ghost visual created: source=Placeholder.");
+        ModLog.Debug("Local third-person ghost visual created: source=Placeholder.");
         return true;
     }
 

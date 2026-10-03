@@ -1,5 +1,6 @@
 using EnhancedSpectator.Features.FearMode;
 using EnhancedSpectator.GameInterop;
+using EnhancedSpectator.Logging;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -9,6 +10,7 @@ public sealed partial class FloatingHeadVisual
 {
     private ModelCameraFade? _headFade;
     private bool _fadeNearby;
+    private bool _reportedIsolatedPoseUpdate;
     private readonly ModelTargetFadeState _targetFade = new ModelTargetFadeState();
     /// <summary>Watched-body identity associated with this owner's model.</summary>
     public void SetWatchedTarget(ulong? clientId, ulong? slotId) { _targetFade.ClientId = clientId; _targetFade.SlotId = slotId; }
@@ -34,13 +36,20 @@ public sealed partial class FloatingHeadVisual
     }
     private void BeginHeadFade(ScriptableRenderContext context, Camera camera)
     {
+        _headFade?.Trace("head-camera-begin", camera);
         _headFade?.Restore();
         if (!LethalCompanyFearViewCamera.IsActiveView(camera) || _disposed || !_gameObject.activeInHierarchy) return;
         float opacity = _targetFade.Update(_gameObject.transform.position, FadeNearby, _headFade?.Ready == true, "Default", _gameObject.transform, _meshFilter?.sharedMesh != null ? _meshFilter.sharedMesh.bounds : (Bounds?)null);
         if (FadeNearby) _headFade?.Begin(opacity);
     }
     private void EndHeadFade(ScriptableRenderContext context, Camera camera) => _headFade?.EndCamera(camera);
-    private void RestoreHeadFade() => _headFade?.Restore();
+    private void ObserveIsolatedPoseUpdate()
+    {
+        _headFade?.Trace("head-pose");
+        if (_reportedIsolatedPoseUpdate || !ModLog.IsDebugEnabled || _headFade?.IsIsolated != true) return;
+        _reportedIsolatedPoseUpdate = true;
+        ModLog.Debug("NativeFade default-head pose updated during camera isolation; isolation retained.");
+    }
     private void UnregisterFade()
     {
         _headFade?.Dispose(); _headFade = null;

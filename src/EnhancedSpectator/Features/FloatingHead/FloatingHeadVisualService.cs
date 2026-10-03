@@ -124,7 +124,8 @@ public sealed class FloatingHeadVisualService : IDisposable
     /// </summary>
     public void CameraPreCullTick(Camera camera)
     {
-        if (_disposed || _disabledDueToError || !IsRenderableGameCamera(camera))
+        if (_disposed || _disabledDueToError || !IsRenderableGameCamera(camera)
+            || !FloatingHeadCameraOwnership.CanUpdate(camera, LethalCompanyFearViewCamera.ActiveView!))
         {
             return;
         }
@@ -175,7 +176,7 @@ public sealed class FloatingHeadVisualService : IDisposable
 
         foreach (FloatingHeadVisual visual in _visuals.Values)
         {
-            DrawScreenFallback(camera, visual);
+            if (LethalCompanyModelVisibility.Allows(visual.SpectatorClientId)) DrawScreenFallback(camera, visual);
         }
     }
 
@@ -210,7 +211,7 @@ public sealed class FloatingHeadVisualService : IDisposable
 
     private void TickCore(Camera? renderingCamera, string poseSource, bool logPose)
     {
-        if (!_config.EnableFloatingHeadVisuals.Value
+        if (_config.Camera.HideAllModels.Value || !_config.EnableFloatingHeadVisuals.Value
             || (!_config.EnablePlaceholderVisuals.Value && !_config.UseRuntimeDetachedHeadVisuals.Value))
         {
             DestroyAll("disabled by config");
@@ -324,6 +325,11 @@ public sealed class FloatingHeadVisualService : IDisposable
         foreach (RemoteSpectatorInfo spectator in spectators)
         {
             _activeSpectatorIds.Add(spectator.SpectatorClientId);
+            if (spectator.PoseState?.ModelStowed == true || LethalCompanyModelVisibility.ShouldHideAutoCentering(spectator))
+            {
+                if (_visuals.TryGetValue(spectator.SpectatorClientId, out var stowed)) stowed.SetVisible(false);
+                continue;
+            }
             bool fearOverrideActive =
                 _fearVisualOverrides?.IsFearVisualActive(spectator.SpectatorClientId) == true;
             bool shouldCreateVisual = DetachedHeadVisualSourceRules.TryResolveVisualSourceKind(
@@ -407,8 +413,19 @@ public sealed class FloatingHeadVisualService : IDisposable
         for (int index = 0; index < visualCount; index++)
         {
             RemoteSpectatorInfo spectator = spectators[index];
+            if (spectator.PoseState?.ModelStowed == true || LethalCompanyModelVisibility.ShouldHideAutoCentering(spectator))
+            {
+                if (_visuals.TryGetValue(spectator.SpectatorClientId, out var hidden)) hidden.SetVisible(false);
+                continue;
+            }
             if (!_visuals.TryGetValue(spectator.SpectatorClientId, out FloatingHeadVisual visual))
             {
+                continue;
+            }
+
+            if (!LethalCompanyModelVisibility.Allows(spectator.SpectatorClientId))
+            {
+                visual.SetVisible(false);
                 continue;
             }
 
@@ -434,7 +451,7 @@ public sealed class FloatingHeadVisualService : IDisposable
                 out bool motionReferenced,
                 out SpectatorMotionReferencePose motionReference))
             {
-                int visualLayer = ResolveVisibleLayer(renderingCamera);
+                int visualLayer = ResolveVisibleLayer();
                 visual.SetLayer(visualLayer);
                 visual.ApplyPose(
                     remotePosition,
@@ -487,7 +504,7 @@ public sealed class FloatingHeadVisualService : IDisposable
                 out Vector3 position,
                 out Quaternion rotation))
             {
-                int visualLayer = ResolveVisibleLayer(renderingCamera);
+                int visualLayer = ResolveVisibleLayer();
                 visual.SetLayer(visualLayer);
                 visual.ApplyPose(position, rotation, scale);
                 visual.UpdateNameTag(renderingCamera);
@@ -1116,7 +1133,12 @@ public sealed class FloatingHeadVisualService : IDisposable
         _sortedSpectators.Clear();
         for (int index = 0; index < spectators.Count; index++)
         {
-            _sortedSpectators.Add(spectators[index]);
+            var spectator = spectators[index];
+            // Retain an already-built head while auto-centering hides it, even when it leaves the visible budget.
+            // Manual look can restore it without cloning the player mesh again.
+            if (LethalCompanyModelVisibility.Allows(spectator.SpectatorClientId)
+                || (_visuals.ContainsKey(spectator.SpectatorClientId) && LethalCompanyModelVisibility.ShouldHideAutoCentering(spectator)))
+                _sortedSpectators.Add(spectator);
         }
 
         _sortedSpectators.Sort((left, right) => left.SpectatorClientId.CompareTo(right.SpectatorClientId));
@@ -1226,11 +1248,13 @@ public sealed class FloatingHeadVisualService : IDisposable
         return false;
     }
 
-    private int ResolveVisibleLayer(Camera? renderingCamera)
+    private int ResolveVisibleLayer()
     {
         const int defaultLayer = 0;
-        Camera? camera = renderingCamera;
-        if (camera == null && (!_placementService.TryGetActiveCamera(out camera) || camera == null))
+        // HDRP culls multiple cameras before drawing the player view. The last
+        // auxiliary callback must never select a map/UI-only layer for this head.
+        Camera? camera = LethalCompanyFearViewCamera.ActiveView;
+        if (camera == null)
         {
             return defaultLayer;
         }

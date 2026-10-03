@@ -28,7 +28,9 @@ public sealed class SpectatorPoseState
         Quaternion motionReferenceLocalRotation = default,
         bool hasTargetMotionReference = false,
         Vector3 targetMotionReferenceLocalPosition = default,
-        Quaternion targetMotionReferenceLocalRotation = default)
+        Quaternion targetMotionReferenceLocalRotation = default,
+        bool modelStowed = false,
+        bool autoCentering = false)
     {
         IsSpectating = isSpectating;
         LocalClientId = localClientId;
@@ -44,12 +46,20 @@ public sealed class SpectatorPoseState
         HasTargetMotionReference = hasTargetMotionReference;
         TargetMotionReferenceLocalPosition = targetMotionReferenceLocalPosition;
         TargetMotionReferenceLocalRotation = targetMotionReferenceLocalRotation;
+        ModelStowed = modelStowed;
+        AutoCentering = autoCentering;
     }
 
     /// <summary>
     /// Gets whether the local player is spectating.
     /// </summary>
     public bool IsSpectating { get; }
+
+    /// <summary>Temporarily hide this spectator's model; pose and voice routing remain valid.</summary>
+    public bool ModelStowed { get; }
+
+    /// <summary>Sender camera is in idle centering; receivers decide whether to show its model.</summary>
+    public bool AutoCentering { get; }
 
     /// <summary>
     /// Gets the spectator Netcode client id.
@@ -115,6 +125,8 @@ public sealed class SpectatorPoseState
         }
 
         if (IsSpectating != other.IsSpectating
+            || ModelStowed != other.ModelStowed
+            || AutoCentering != other.AutoCentering
             || LocalClientId != other.LocalClientId
             || LocalPlayerSlotId != other.LocalPlayerSlotId
             || TargetClientId != other.TargetClientId

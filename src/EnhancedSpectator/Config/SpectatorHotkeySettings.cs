@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using EnhancedSpectator.Logging;
 using BepInEx.Configuration;
 using EnhancedSpectator.Features.Spectator;
 using UnityEngine;
@@ -41,7 +43,11 @@ internal sealed class SpectatorHotkeySettings
             new SpectatorHotkeyBinding("播放／停止恐惧音效", "Play / stop fear sound", c.FearSoundKey),
             new SpectatorHotkeyBinding("下一恐惧音效", "Next fear sound", c.FearSoundNextKey),
             new SpectatorHotkeyBinding("显示／隐藏按键提示", "Toggle key hints", c.Camera.ToggleKeyHintsKey),
-            new SpectatorHotkeyBinding("隐藏／显示观战界面", "Toggle spectator HUD", c.Camera.ToggleHudKey)
+            new SpectatorHotkeyBinding("隐藏／显示观战界面", "Toggle spectator HUD", c.Camera.ToggleHudKey),
+            new SpectatorHotkeyBinding("运镜模式视角", "Camera choreography view", c.Camera.MonitorKey),
+            new SpectatorHotkeyBinding("开关红外热成像", "Toggle thermal imaging", c.Camera.MonitorInfraredKey),
+            new SpectatorHotkeyBinding("显示／隐藏观战面板", "Toggle watch panel", c.Camera.ToggleSpectatorRosterKey),
+            new SpectatorHotkeyBinding("观战光标／查看观众", "Viewer-list pointer", c.Camera.ToggleSpectatorCursorKey)
         };
     }
     internal bool TryAssign(int index, KeyCode key, out int conflict)
@@ -59,7 +65,25 @@ internal sealed class SpectatorHotkeySettings
                     || (Bindings[i].WheelModifier && Bindings[index].SpeedModifier)) continue;
                 conflict = i; return false;
             }
-        Bindings[index].Entry.Value = key; return true;
+        var entry = Bindings[index].Entry;
+        var old = entry.Value;
+        bool autosave = entry.ConfigFile.SaveOnConfigSet;
+        entry.ConfigFile.SaveOnConfigSet = false;
+        try
+        {
+            entry.Value = key;
+            // Explicitly persist the file that owns this binding, even if another config UI disables autosave.
+            entry.ConfigFile.Save();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            entry.Value = old;
+            conflict = -2;
+            ModLog.Warning($"Could not save spectator hotkey: {ex.GetType().Name}.");
+            return false;
+        }
+        finally { entry.ConfigFile.SaveOnConfigSet = autosave; }
     }
     internal void Reset()
     {

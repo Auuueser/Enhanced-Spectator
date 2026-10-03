@@ -6,14 +6,15 @@ using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.HighDefinition;
 using UnityEngine.Rendering.RendererUtils;
+using UnityEngine.Experimental.Rendering.RenderGraphModule;
 
 namespace EnhancedSpectator.GameInterop;
 
 /// <summary>Draws original surfaces into a private target before fading the complete model.</summary>
 internal sealed class NativeFadePass : CustomPass
 {
-    internal const int IsolationLayer = 31;
-    internal const string ImplementationId = "whole-model-r6-range-region-20260924";
+    internal const int IsolationLayer = NativeFadeCulling.IsolationLayer;
+    internal const string ImplementationId = "whole-model-r11-active-view-owner-20260927";
     internal static readonly string[] ForwardPassNames = { "Forward", "ForwardOnly", "SRPDefaultUnlit" };
     private static readonly ShaderTagId[] ForwardTags = { new ShaderTagId("Forward"), new ShaderTagId("ForwardOnly"), new ShaderTagId("SRPDefaultUnlit") };
     internal static readonly string[] DepthPassNames = { "DepthOnly", "DepthForwardOnly" };
@@ -30,21 +31,24 @@ internal sealed class NativeFadePass : CustomPass
     private static readonly HashSet<int> ReportedBorrowedCameras = new HashSet<int>();
     internal static float FadeRadius => _config?.FadeRadius.Value ?? 2.5f;
     internal static void Configure(Config.SpectatorCameraConfig config) => _config = config;
+    internal static bool ShouldFadeTarget(ulong? clientId, ulong? slotId) => _config != null
+        && LethalCompanyFearViewCamera.ShouldFadeTarget(_config, clientId, slotId);
     internal static void PrepareCamera(HDCamera camera, ref FrameSettings settings)
     {
         bool requested = !_failed && Owners.Count > 0 && _config != null
             && LethalCompanyFearViewCamera.IsActiveView(camera.camera)
             && LethalCompanyFearViewCamera.ShouldFade(_config);
+        if (requested && _volume != null) _volume.targetCamera = camera.camera;
+        requested |= SpectatorThermalPass.Requested(camera.camera);
         bool original = settings.IsEnabled(FrameSettingsField.CustomPass);
         bool enabled = CameraGate.Prepare(Time.frameCount, camera.camera.GetInstanceID(), requested, original);
-        if (requested && _volume != null) _volume.targetCamera = camera.camera;
         if (enabled == original) return;
         settings.SetEnabled(FrameSettingsField.CustomPass, enabled);
         if (ReportedBorrowedCameras.Add(camera.camera.GetInstanceID()))
-            ModLog.Info($"NativeFade camera compatibility: camera={camera.camera.name}; custom passes disabled by camera settings; enabling only the owned fade pass in the working frame. Saved quality settings and other disabled passes remain unchanged.");
+            ModLog.Debug($"NativeFade camera compatibility: camera={camera.camera.name}; custom passes disabled by camera settings; enabling requested owned image passes in the working frame. Saved quality settings and other disabled passes remain unchanged.");
     }
     internal static bool SuppressOtherPass(CustomPass pass, HDCamera camera) =>
-        CameraGate.SuppressOtherPass(Time.frameCount, camera.camera.GetInstanceID(), pass == _instance);
+        CameraGate.SuppressOtherPass(Time.frameCount, camera.camera.GetInstanceID(), pass == _instance || SpectatorThermalPass.Owns(pass));
     private static int _leaseFrame = -1;
     private readonly List<LethalCompanyNativeFade> _jobs = new List<LethalCompanyNativeFade>(24);
     private Material? _composite;
@@ -52,6 +56,38 @@ internal sealed class NativeFadePass : CustomPass
     private RenderTexture? _model;
     private Camera? _readyCamera;
     private int _readyFrame = -100;
+    private NativeFadeLightResources _lights;
+    private HDRenderPipeline.LightingBuffers _screenLighting;
+    private HDRenderPipeline.PrepassOutput _lightingPrepass;
+    private ShadowResult _shadows;
+    private HDCamera? _lightingCamera;
+    private int _lightingFrame = -1;
+    private bool _lightingRetained;
+
+    internal static void CaptureLighting(HDCamera camera, in HDRenderPipeline.BuildGPULightListOutput lights,
+        in HDRenderPipeline.LightingBuffers screenLighting, in HDRenderPipeline.PrepassOutput prepass, in ShadowResult shadows)
+    {
+        var pass = _instance;
+        if (pass == null || !LethalCompanyFearViewCamera.IsActiveView(camera.camera)) return;
+        pass._lights = new NativeFadeLightResources(lights.perVoxelLightLists, lights.perVoxelOffset, lights.perTileLogBaseTweak);
+        pass._screenLighting = screenLighting;
+        pass._lightingPrepass = prepass;
+        pass._shadows = shadows;
+        pass._lightingCamera = camera;
+        pass._lightingFrame = Time.frameCount;
+        pass._lightingRetained = false;
+    }
+
+    internal void RetainLighting(RenderGraphBuilder builder)
+    {
+        if (_lightingFrame != Time.frameCount || _lightingCamera != currentHDCamera || !_lights.Available) return;
+        _lights.Retain(builder);
+        HDRenderPipeline.ReadLightingBuffers(in _screenLighting, builder);
+        HDRenderPipeline.ReadDBuffer(_lightingPrepass.dbuffer, builder);
+        if (_lightingPrepass.depthPyramidTexture.IsValid()) builder.ReadTexture(_lightingPrepass.depthPyramidTexture);
+        HDShadowManager.ReadShadowResult(in _shadows, builder);
+        _lightingRetained = true;
+    }
     private int _width, _height;
     private float _lastDiagnostic;
     private float _nextBufferDiagnostic;
@@ -78,7 +114,7 @@ internal sealed class NativeFadePass : CustomPass
                 _volume.injectionPoint = CustomPassInjectionPoint.BeforePostProcess;
                 _volume.customPasses.Add(pass);
                 RenderPipelineManager.endFrameRendering += EndFrame;
-                ModLog.Info($"NativeFade resources loaded: build={ImplementationId}; awaiting camera buffers.");
+                ModLog.Debug($"NativeFade resources loaded: build={ImplementationId}; awaiting camera buffers.");
             }
             catch (Exception ex)
             {
@@ -98,10 +134,12 @@ internal sealed class NativeFadePass : CustomPass
     }
     private static void EndFrame(ScriptableRenderContext context, Camera[] cameras)
     {
+        NativeFadeDiagnostics.Flush();
         if (ResourceLease.Expired(Time.unscaledTime, Owners.Count)) Shutdown();
     }
     internal static void Shutdown()
     {
+        NativeFadeDiagnostics.Cancel();
         RenderPipelineManager.endFrameRendering -= EndFrame;
         _instance?.Release(); _instance = null;
         if (_host != null) UnityEngine.Object.Destroy(_host);
@@ -139,25 +177,42 @@ internal sealed class NativeFadePass : CustomPass
         if (shader == null || !shader.isSupported) throw new InvalidOperationException("Native fade composite shader unsupported.");
         _composite = new Material(shader) { hideFlags = HideFlags.HideAndDontSave };
     }
-    protected override bool executeInSceneView => false;
-    protected override void AggregateCullingParameters(ref ScriptableCullingParameters parameters, HDCamera camera)
-    {
-        if (LethalCompanyFearViewCamera.IsActiveView(camera.camera)) parameters.cullingMask |= 1u << IsolationLayer;
-    }
-    protected override void Execute(CustomPassContext ctx)
+    public override bool executeInSceneView => false;
+    // Do not add our layer to HDRP's shared cull. We own the single, lazy cull below,
+    // including when another mod skips CustomPassVolume.Cull or reuses the camera cull.
+    public override void Execute(CustomPassContext ctx)
     {
         if (!LethalCompanyFearViewCamera.IsActiveView(ctx.hdCamera.camera) || _failed) return;
         _jobs.Clear();
         foreach (var owner in Owners)
             if (owner.Tag != 0 && owner.Camera == ctx.hdCamera.camera && owner.Frame == Time.frameCount) _jobs.Add(owner);
+        CullingResults? modelCulling = null;
+        bool cullingAttempted = false;
         try
         {
+            if (!_lightingRetained || _lightingFrame != Time.frameCount || _lightingCamera != ctx.hdCamera)
+            {
+                // Do not render native lit surfaces using stale global GPU bindings.
+                // Release model ownership; the next frame keeps original scene rendering.
+                _readyCamera = null; _readyFrame = -100;
+                foreach (var owner in _jobs) owner.ClearRequest();
+                if (_lastFailure != "lighting-dependencies-unavailable")
+                {
+                    _lastFailure = "lighting-dependencies-unavailable";
+                    ModLog.Warning("Native fade lighting dependencies unavailable; retaining original model rendering.");
+                }
+                return;
+            }
+            _lights.Bind(ctx.cmd);
+            HDRenderPipeline.BindGlobalLightingBuffers(in _screenLighting, ctx.cmd);
+            if (_lightingPrepass.depthPyramidTexture.IsValid())
+                ctx.cmd.SetGlobalTexture("_CameraDepthTexture", _lightingPrepass.depthPyramidTexture);
             var color = ctx.cameraColorBuffer.rt; var depth = ctx.cameraDepthBuffer.rt;
             DescribeBuffers(ctx, color, depth);
             string? problem = NativeFadeBuffers.Validate(color, depth, ctx.hdCamera.actualWidth, ctx.hdCamera.actualHeight);
-            if (problem != null) { Unavailable(ctx, problem); return; }
+            if (problem != null) { Unavailable(ctx, problem, ref cullingAttempted, ref modelCulling); return; }
             if (ctx.hdCamera.camera.stereoEnabled || (ctx.hdCamera.camera.cullingMask & (1 << IsolationLayer)) != 0)
-            { Unavailable(ctx, "Camera includes isolation layer 31, or stereo is active."); return; }
+            { Unavailable(ctx, "Camera includes isolation layer 31, or stereo is active.", ref cullingAttempted, ref modelCulling); return; }
             bool allocated = EnsureBuffer(color!.width, color.height);
             bool variantChanged = NativeFadeBuffers.Bind(ctx.cmd, _composite!, color, depth!, ctx.cameraColorBuffer.nameID, ctx.cameraDepthBuffer.nameID);
             var viewport = new Rect(0, 0, ctx.hdCamera.actualWidth, ctx.hdCamera.actualHeight);
@@ -169,26 +224,34 @@ internal sealed class NativeFadePass : CustomPass
                 Composite(ctx, viewport, 0f);
             }
             if (_readyCamera != ctx.hdCamera.camera || _lastFailure != null)
-                ModLog.Info($"NativeFade camera prepared: camera={ctx.hdCamera.camera.name}, build={ImplementationId}, viewport={ctx.hdCamera.actualWidth}x{ctx.hdCamera.actualHeight}. Waiting for model draw requests.");
+                ModLog.Debug($"NativeFade camera prepared: camera={ctx.hdCamera.camera.name}, build={ImplementationId}, viewport={ctx.hdCamera.actualWidth}x{ctx.hdCamera.actualHeight}, lighting=clustered-retained. Waiting for model draw requests.");
             _lastFailure = null;
             _readyCamera = ctx.hdCamera.camera; _readyFrame = Time.frameCount;
             _jobs.Sort(FarToNear);
             foreach (var owner in _jobs)
             {
+                NativeFadeDiagnostics.Trace(owner, "pass-job", ctx.hdCamera.camera);
                 ctx.cmd.BeginSample("ES whole-model fade");
                 try
                 {
                     // Fully invisible and offscreen models remain isolated but need no draw/copy.
-                    if (owner.Opacity <= 0f) continue;
+                    if (owner.Opacity <= 0f) { owner.RecordSubmission(true, false); continue; }
                     var region = owner.RenderRegion(ctx.hdCamera.camera, ctx.hdCamera.actualWidth, ctx.hdCamera.actualHeight);
-                    if (region.width <= 0f || region.height <= 0f) continue;
+                    if (region.width <= 0f || region.height <= 0f) { owner.RecordSubmission(false, true); continue; }
+                    if (!TryGetModelCulling(ctx, ref cullingAttempted, ref modelCulling))
+                    { Unavailable(ctx, "Could not cull isolated model surfaces.", ref cullingAttempted, ref modelCulling); return; }
                     owner.ReapplyForDraw();
                     CopyScene(ctx, viewport, region);
-                    DrawNative(ctx, owner.Tag, true);
-                    DrawNative(ctx, owner.Tag, false);
+                    NativeFadeDiagnostics.Pixels(owner, ctx.cmd, _model!, region, 0);
+                    DrawNative(ctx, modelCulling!.Value, owner.Tag, true);
+                    DrawNative(ctx, modelCulling.Value, owner.Tag, false);
+                    NativeFadeDiagnostics.Pixels(owner, ctx.cmd, _model!, region, 1);
                     Composite(ctx, viewport, owner.Opacity, region);
-                    if (_submittedModels.Add(owner.Key))
-                        ModLog.Info($"NativeFade draw submitted: model={owner.Key}, camera={owner.Camera?.name}, alpha={owner.Opacity:F5}, tag={owner.Tag:X8}, build={ImplementationId}. Submission is not visual acceptance.");
+                    NativeFadeDiagnostics.Pixels(owner, ctx.cmd, color!, region, 2);
+                    NativeFadeDiagnostics.Trace(owner, "composite-enqueued");
+                    owner.RecordSubmission(false, false);
+                    if (ModLog.IsDebugEnabled && _submittedModels.Add(owner.Key))
+                        ModLog.Debug($"NativeFade draw submitted: model={owner.Key}, camera={owner.Camera?.name}, alpha={owner.Opacity:F5}, tag={owner.Tag:X8}, build={ImplementationId}. Submission is not visual acceptance.");
                 }
                 finally { ctx.cmd.DisableScissorRect(); owner.Restore(); ctx.cmd.EndSample("ES whole-model fade"); }
             }
@@ -202,7 +265,7 @@ internal sealed class NativeFadePass : CustomPass
         catch (Exception ex)
         {
             _failed = true;
-            Unavailable(ctx, ex.Message);
+            Unavailable(ctx, ex.Message, ref cullingAttempted, ref modelCulling);
         }
         finally
         {
@@ -229,6 +292,7 @@ internal sealed class NativeFadePass : CustomPass
     }
     private void DescribeBuffers(CustomPassContext ctx, RenderTexture? color, RenderTexture? depth)
     {
+        if (!ModLog.IsDebugEnabled) { _bufferDiagnosticPending = true; return; }
         var signature = (ctx.hdCamera.camera.GetInstanceID(), color == null ? default : color.descriptor,
             depth == null ? default : depth.descriptor, ctx.hdCamera.actualWidth, ctx.hdCamera.actualHeight,
             ctx.cameraColorBuffer.rtHandleProperties.rtHandleScale, ctx.cameraDepthBuffer.rtHandleProperties.rtHandleScale);
@@ -236,11 +300,29 @@ internal sealed class NativeFadePass : CustomPass
         _descriptor = signature;
         if (!_bufferDiagnosticPending || Time.unscaledTime < _nextBufferDiagnostic) return;
         _nextBufferDiagnostic = Time.unscaledTime + 5f; _bufferDiagnosticPending = false;
-        ModLog.Info($"NativeFade buffers: camera={ctx.hdCamera.camera.name}, injection=BeforePostProcess, viewport={ctx.hdCamera.actualWidth}x{ctx.hdCamera.actualHeight}, stereo={ctx.hdCamera.camera.stereoEnabled}, hardwareScale={ScalableBufferManager.widthScaleFactor:F3}/{ScalableBufferManager.heightScaleFactor:F3}; color=[{Describe(color)}], scale={signature.Item6}; depth=[{Describe(depth)}], scale={signature.Item7}.");
+        ModLog.Debug($"NativeFade buffers: camera={ctx.hdCamera.camera.name}, injection=BeforePostProcess, viewport={ctx.hdCamera.actualWidth}x{ctx.hdCamera.actualHeight}, stereo={ctx.hdCamera.camera.stereoEnabled}, hardwareScale={ScalableBufferManager.widthScaleFactor:F3}/{ScalableBufferManager.heightScaleFactor:F3}; color=[{Describe(color)}], scale={signature.Item6}; depth=[{Describe(depth)}], scale={signature.Item7}.");
     }
     private static string Describe(RenderTexture? texture) => texture == null ? "null RenderTexture" :
         $"{texture.name}, created={texture.IsCreated()}, dimension={texture.dimension}, allocation={texture.width}x{texture.height}, slices={texture.volumeDepth}, samples={texture.antiAliasing}, bindMS={texture.bindTextureMS}, format={texture.graphicsFormat}, depth={texture.descriptor.depthStencilFormat}, dynamicScale={texture.useDynamicScale}";
-    private void Unavailable(CustomPassContext ctx, string reason)
+    private bool TryGetModelCulling(CustomPassContext ctx, ref bool attempted, ref CullingResults? results)
+    {
+        if (attempted) return results.HasValue;
+        attempted = true;
+        if (_jobs.Count == 0) return false;
+        // Reassert all requests before culling once, not once per model/material.
+        try
+        {
+            foreach (var owner in _jobs) owner.ReapplyForDraw();
+            if (NativeFadeCulling.TryCull(ctx.renderContext, ctx.hdCamera.camera, out var culled)) results = culled;
+        }
+        catch (Exception ex)
+        {
+            _failed = true;
+            ModLog.Warning("Native fade isolated culling failed; releasing model ownership: " + ex.Message);
+        }
+        return results.HasValue;
+    }
+    private void Unavailable(CustomPassContext ctx, string reason, ref bool cullingAttempted, ref CullingResults? modelCulling)
     {
         ctx.cmd.DisableScissorRect();
         _readyCamera = null; _readyFrame = -100;
@@ -249,22 +331,23 @@ internal sealed class NativeFadePass : CustomPass
         // If descriptors are incompatible, release ownership for the next frame.
         var color = ctx.cameraColorBuffer.rt; var depth = ctx.cameraDepthBuffer.rt;
         if (color == null || depth == null || color.antiAliasing != depth.antiAliasing || color.dimension != depth.dimension) return;
+        if (!TryGetModelCulling(ctx, ref cullingAttempted, ref modelCulling)) return;
         CoreUtils.SetRenderTarget(ctx.cmd, ctx.cameraColorBuffer, ctx.cameraDepthBuffer);
         foreach (var owner in _jobs)
         {
-            try { owner.ReapplyForDraw(); DrawNative(ctx, owner.Tag, true); DrawNative(ctx, owner.Tag, false); }
+            try { owner.ReapplyForDraw(); DrawNative(ctx, modelCulling!.Value, owner.Tag, true); DrawNative(ctx, modelCulling.Value, owner.Tag, false); }
             finally { owner.Restore(); }
         }
     }
     private static int FarToNear(LethalCompanyNativeFade left, LethalCompanyNativeFade right) => right.SortDistance.CompareTo(left.SortDistance);
-    private static void DrawNative(CustomPassContext ctx, uint tag, bool opaque)
+    private static void DrawNative(CustomPassContext ctx, CullingResults modelCulling, uint tag, bool opaque)
     {
         if (opaque)
         {
             // Native opaque Forward can bypass alpha clipping and requires Equal
             // against its own clipped depth prepass. LessEqual alone exposes the
             // cutout card (clock hands, apparatus label, Maneater appendages).
-            var depth = new RendererListDesc(DepthTags, ctx.cullingResults, ctx.hdCamera.camera)
+            var depth = new RendererListDesc(DepthTags, modelCulling, ctx.hdCamera.camera)
             {
                 layerMask = 1 << IsolationLayer, renderingLayerMask = tag,
                 renderQueueRange = RenderQueueRange.opaque, sortingCriteria = SortingCriteria.CommonOpaque,
@@ -277,7 +360,7 @@ internal sealed class NativeFadePass : CustomPass
             var depthList = ctx.renderContext.CreateRendererList(depth);
             CoreUtils.DrawRendererList(ctx.renderContext, ctx.cmd, depthList);
         }
-        var desc = new RendererListDesc(ForwardTags, ctx.cullingResults, ctx.hdCamera.camera)
+        var desc = new RendererListDesc(ForwardTags, modelCulling, ctx.hdCamera.camera)
         {
             layerMask = 1 << IsolationLayer,
             renderingLayerMask = tag,
@@ -287,10 +370,11 @@ internal sealed class NativeFadePass : CustomPass
             // Preserve each source pass's original Equal/LEqual and write policy.
             stateBlock = new RenderStateBlock(RenderStateMask.Nothing)
         };
-        // Same light-list selection as installed HDRP's RenderForwardRendererList.
-        bool tiled = opaque && ctx.hdCamera.frameSettings.IsEnabled(FrameSettingsField.FPTLForForwardOpaque);
-        CoreUtils.SetKeyword(ctx.cmd, "USE_FPTL_LIGHTLIST", tiled);
-        CoreUtils.SetKeyword(ctx.cmd, "USE_CLUSTERED_LIGHTLIST", !tiled);
+        // FPTL is pruned against the scene's opaque depth, which deliberately
+        // excludes our isolated models. Use the full-depth clustered list for
+        // both native opaque and transparent surfaces, without changing materials.
+        CoreUtils.SetKeyword(ctx.cmd, "USE_FPTL_LIGHTLIST", false);
+        CoreUtils.SetKeyword(ctx.cmd, "USE_CLUSTERED_LIGHTLIST", true);
         var list = ctx.renderContext.CreateRendererList(desc);
         CoreUtils.DrawRendererList(ctx.renderContext, ctx.cmd, list);
     }
@@ -302,10 +386,12 @@ internal sealed class NativeFadePass : CustomPass
         _width = width; _height = height;
         return true;
     }
-    protected override void Cleanup() => Release();
+    public override void Cleanup() => Release();
     private void Release()
     {
         _readyCamera = null;
+        _lightingCamera = null; _lightingFrame = -1; _lightingRetained = false;
+        _lights = default; _shadows = default; _screenLighting = default; _lightingPrepass = default;
         if (_model != null) { _model.Release(); UnityEngine.Object.Destroy(_model); _model = null; }
         if (_composite != null) { UnityEngine.Object.Destroy(_composite); _composite = null; }
         if (_bundle != null) { _bundle.Unload(true); _bundle = null; }

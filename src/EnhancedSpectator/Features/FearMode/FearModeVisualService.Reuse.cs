@@ -12,7 +12,8 @@ public sealed partial class FearModeVisualService
     private readonly VisualReusePool<(string Model, int Hierarchy, int Renderers, int Mask), RuntimeEnemyVisual> _idleVisuals =
         new VisualReusePool<(string, int, int, int), RuntimeEnemyVisual>(4);
 
-    private void SceneUnloaded(Scene scene) => ClearAll();
+    private void SceneUnloaded(Scene scene)
+    { if(!MonitorDoorGeometry.OwnsScene(scene)) ClearAll(); }
 
     private sealed class PendingVisual
     {

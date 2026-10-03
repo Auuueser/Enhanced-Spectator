@@ -22,6 +22,9 @@ public sealed class FearModelCatalog
     /// <summary>Gets the current ordered model keys, including Default.</summary>
     public IReadOnlyList<string> ModelKeys => _modelKeys;
 
+    internal void InvalidateSources() => (_adapter as IGameFearCatalogPreparationAdapter)?.InvalidateCatalogSources();
+    internal void TickPreparation() => (_adapter as IGameFearCatalogPreparationAdapter)?.TickCatalogPreparation();
+
     /// <summary>Refreshes keys from confirmed original visual sources.</summary>
     public void Refresh()
     {

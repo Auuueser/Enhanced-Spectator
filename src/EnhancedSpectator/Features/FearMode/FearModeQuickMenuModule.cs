@@ -90,6 +90,7 @@ public sealed class FearModeQuickMenuModule : IFeatureModule, IRuntimeTickable
         }
 
         bool quickMenuOpen = _quickMenuAdapter.IsQuickMenuOpen;
+        if (RuntimeConnectionState.CanRunLocalDiagnostics(out _)) _service.Catalog.TickPreparation();
         var audit = _thumbnailProvider as FearModelThumbnailService;
         bool renderedAudit = audit?.TickDeveloperAudit() == true;
         if (quickMenuOpen && audit != null && audit.TryGetAuditPage(out int auditPage))
@@ -98,7 +99,9 @@ public sealed class FearModeQuickMenuModule : IFeatureModule, IRuntimeTickable
             _category = FearModelCategory.All;
             _pageIndex = auditPage;
         }
-        if (!renderedAudit) _thumbnailProvider.Tick();
+        // Menu demand prioritizes the requested page, then prefetches while the catalog is open.
+        // Closing the menu, switching pages, or showing Options drops stale requests.
+        _thumbnailProvider.BeginVisiblePage();
         if (!quickMenuOpen)
         {
             HandleModelCycleHotkeys();
@@ -136,12 +139,13 @@ public sealed class FearModeQuickMenuModule : IFeatureModule, IRuntimeTickable
             if (_refreshCatalogOnOpen)
             {
                 _refreshCatalogOnOpen = false;
-                // The network service already refreshes sources at a bounded cadence.
-                // Opening a retained view must not repeat a whole-scene source scan.
-                if (_service.Catalog.ModelKeys.Count <= 1) _service.RefreshCatalogNow();
+                // Rediscover definitions added after scene load once per explicit opening.
+                _service.RefreshCatalogNow();
             }
 
             RenderPanel();
+            if (!renderedAudit && RuntimeConnectionState.CanRunLocalDiagnostics(out _))
+                _thumbnailProvider.Tick();
             audit?.CaptureAuditPage(FearQuickMenuRules.ResolvePageCount(_entries.Count));
         }
     }
@@ -263,6 +267,10 @@ public sealed class FearModeQuickMenuModule : IFeatureModule, IRuntimeTickable
         string selectedDisplayName = FearModelUiPresentationRules.ResolveDisplayName(
             selectedKey,
             _config.UseChineseText);
+        bool dropshipOnPage = false;
+        int firstEntry = _pageIndex * FearQuickMenuRules.PageSize;
+        for (int index = firstEntry; index < _entries.Count && index < firstEntry + FearQuickMenuRules.PageSize; index++)
+            if (_entries[index].ModelKey == FearModelIdentityRules.Dropship) { dropshipOnPage = true; break; }
         _quickMenuAdapter.Render(new FearQuickMenuViewState(
             _entries,
             _pageIndex,
@@ -279,7 +287,7 @@ public sealed class FearModeQuickMenuModule : IFeatureModule, IRuntimeTickable
             selectedDisplayName)
         {
             SupportsExpandedModels = _service.SupportsExpandedCatalog,
-            DropshipAvailable = _service.Catalog.TryGetVisualSource(FearModelIdentityRules.Dropship, out _),
+            DropshipAvailable = dropshipOnPage && _service.Catalog.TryGetVisualSource(FearModelIdentityRules.Dropship, out _),
             Category = _category,
             StatusText = ResolveStatus(localPlayerDead)
         });
@@ -301,7 +309,7 @@ public sealed class FearModeQuickMenuModule : IFeatureModule, IRuntimeTickable
         _panelOpen = !_panelOpen;
         _refreshCatalogOnOpen = _panelOpen;
         _quickMenuAdapter.SetPanelVisible(_panelOpen);
-        ModLog.Info(_panelOpen
+        ModLog.Debug(_panelOpen
             ? "Fear quick-menu panel opened."
             : "Fear quick-menu panel closed.");
     }
@@ -347,7 +355,7 @@ public sealed class FearModeQuickMenuModule : IFeatureModule, IRuntimeTickable
     private void ToggleGhostVoiceMute()
     {
         bool muted = _voiceMuteState.Toggle();
-        ModLog.Info(muted
+        ModLog.Debug(muted
             ? "Routed ghost voice muted from fear quick menu."
             : "Routed ghost voice unmuted from fear quick menu.");
     }
@@ -377,7 +385,7 @@ public sealed class FearModeQuickMenuModule : IFeatureModule, IRuntimeTickable
         FearVisualWorkSchedule.Shared.ModelChanged(UnityEngine.Time.frameCount);
         if (!_service.TrySelectLocalModel(modelKey, out string reason))
         {
-            ModLog.Warning($"Fear model selection rejected: {reason}.");
+            ModLog.Debug($"Fear model selection rejected: {reason}.");
         }
     }
 
