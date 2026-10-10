@@ -27,15 +27,19 @@ internal sealed class LethalCompanySpectatorHintAdapter : IGameSpectatorHudAdapt
         if (!_config.EnableEnhancedSpectator.Value || local == null || !local.isPlayerDead
             || local.isInGameOverAnimation > 0 || round!.overrideSpectateCamera
             || local.spectatedPlayerScript == null || local.spectatedPlayerScript.isPlayerDead
-            || hud == null || hud.holdButtonToEndGameEarlyText == null) { Dispose(); return; }
+            || hud == null || hud.holdButtonToEndGameEarlyText == null
+            // The split-screen shows its own key-cap bar.
+            || Features.SplitScreen.SplitScreenModule.Current?.OverlayCanvas != null) { Dispose(); return; }
         var source = hud.holdButtonToEndGameEarlyText;
+        var desiredParent = source.transform.parent;
         if (_source != source || _root == null)
         {
             Dispose(); _source = source;
             _root = new GameObject("EnhancedSpectator Key Hints", typeof(RectTransform)).GetComponent<RectTransform>();
-            _root.SetParent(source.transform.parent, false);
+            _root.SetParent(desiredParent, false);
             _root.anchorMin = _root.anchorMax = Vector2.zero; _root.pivot = new Vector2(1, 1);
         }
+        if (_root.parent != desiredParent) { _root.SetParent(desiredParent, false); _nextRefresh = 0; }
         bool visible = _config.Camera.ShowKeyHints.Value && !LethalCompanySpectatorUiVisibility.Hidden
             && (local.quickMenuManager == null || !local.quickMenuManager.isMenuOpen)
             && !local.isTypingChat && !round.localPlayerUsingController;
@@ -66,7 +70,7 @@ internal sealed class LethalCompanySpectatorHintAdapter : IGameSpectatorHudAdapt
         {
             if (i == _rows.Count) _rows.Add((Clone(source, "Action"), Clone(source, "Keys")));
             labelWidth = Mathf.Max(labelWidth, Measure(_rows[i].label, rows[i].Label, font));
-            keyWidth = Mathf.Max(keyWidth, Measure(_rows[i].keys, "[" + rows[i].Keys + "]", font));
+            keyWidth = Mathf.Max(keyWidth, Measure(_rows[i].keys, KeyCell(rows[i].Keys), font));
         }
         var layout = SpectatorHintLayout.Fit(labelWidth, keyWidth, font * .65f, maxWidth);
         font *= layout.Scale;
@@ -81,10 +85,12 @@ internal sealed class LethalCompanySpectatorHintAdapter : IGameSpectatorHudAdapt
             if (i == _rows.Count) _rows.Add((Clone(source, "Action"), Clone(source, "Keys")));
             var pair = _rows[i]; pair.label.gameObject.SetActive(true); pair.keys.gameObject.SetActive(true);
             SetCell(pair.label, rows[i].Label, 0, i, labelWidth, lineHeight, font, TextAlignmentOptions.MidlineRight);
-            SetCell(pair.keys, "[" + rows[i].Keys + "]", labelWidth + layout.Gap, i, keyWidth, lineHeight, font, TextAlignmentOptions.MidlineLeft);
+            SetCell(pair.keys, KeyCell(rows[i].Keys), labelWidth + layout.Gap, i, keyWidth, lineHeight, font, TextAlignmentOptions.MidlineLeft);
         }
         for (int i = rows.Count; i < _rows.Count; i++) { _rows[i].label.gameObject.SetActive(false); _rows[i].keys.gameObject.SetActive(false); }
     }
+    // A status row has no key.
+    private static string KeyCell(string keys) => keys.Length == 0 ? string.Empty : "[" + keys + "]";
     private float Measure(TextMeshProUGUI cell, string value, float font)
     {
         cell.font = _source!.font; cell.fontSize = font; cell.enableAutoSizing = false;
@@ -112,7 +118,8 @@ internal sealed class LethalCompanySpectatorHintAdapter : IGameSpectatorHudAdapt
     { rect.GetWorldCorners(_corners); return Mathf.Min(parent.InverseTransformPoint(_corners[0]).y, parent.InverseTransformPoint(_corners[3]).y); }
     public void Dispose()
     {
-        if (_root != null) UnityEngine.Object.Destroy(_root.gameObject);
+        // Hidden now; Destroy only completes at the end of the frame.
+        if (_root != null) { _root.gameObject.SetActive(false); UnityEngine.Object.Destroy(_root.gameObject); }
         _root = null; _source = null; _rows.Clear(); _nextRefresh = 0;
     }
 }

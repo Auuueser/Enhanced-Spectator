@@ -31,6 +31,8 @@ public sealed partial class FearModeVisualService : IDisposable
     private readonly HashSet<ulong> _activeRemoteIds = new HashSet<ulong>();
     private readonly List<ulong> _staleIds = new List<ulong>();
     private RuntimeEnemyVisual? _localVisual;
+    // Your own emote above your own model, as everyone else sees it above your ghost (third person only).
+    private FloatingHead.EmoteBubbleVisual? _localEmote;
     private ulong _localVisualClientId;
     private bool _hasLocalVisualClientId;
     private bool _disposed;
@@ -63,6 +65,7 @@ public sealed partial class FearModeVisualService : IDisposable
         UnityEngine.SceneManagement.SceneManager.sceneUnloaded += SceneUnloaded;
         RenderPipelineManager.beginCameraRendering += BeginCameraRendering;
         RenderPipelineManager.endCameraRendering += EndCameraRendering;
+        Social.SpectatorSocialEvents.Emote += OnEmote;
         _config.Camera.FadeModelsNearby.SettingChanged += OnFadePreferenceChanged;
         _config.Camera.FadeModelsWhileSpectating.SettingChanged += OnFadePreferenceChanged;
     }
@@ -120,6 +123,8 @@ public sealed partial class FearModeVisualService : IDisposable
         UnityEngine.SceneManagement.SceneManager.sceneUnloaded -= SceneUnloaded;
         RenderPipelineManager.beginCameraRendering -= BeginCameraRendering;
         RenderPipelineManager.endCameraRendering -= EndCameraRendering;
+        Social.SpectatorSocialEvents.Emote -= OnEmote;
+        _localEmote?.Dispose(); _localEmote = null;
         _config.Camera.FadeModelsNearby.SettingChanged -= OnFadePreferenceChanged;
         _config.Camera.FadeModelsWhileSpectating.SettingChanged -= OnFadePreferenceChanged;
         _disposed = true;
@@ -134,6 +139,7 @@ public sealed partial class FearModeVisualService : IDisposable
             bool enabled = LethalCompanyFearViewCamera.ShouldFade(_config.Camera);
             foreach (var visual in _remoteVisuals.Values) visual.BeginCameraFade(enabled);
             _localVisual?.BeginCameraFade(enabled);
+            _localEmote?.Face(camera);
         }
         catch (Exception ex) { RestoreFades(); ModLog.Debug("Model camera fade skipped: " + ex.GetType().Name); }
     }
@@ -167,8 +173,8 @@ public sealed partial class FearModeVisualService : IDisposable
         for (int index = 0; index < spectators.Count; index++)
         {
             RemoteSpectatorInfo spectator = spectators[index];
-            if (!LethalCompanyModelVisibility.Allows(spectator.SpectatorClientId) || spectator.PoseState?.ModelStowed == true
-                || LethalCompanyModelVisibility.ShouldHideAutoCentering(spectator))
+            float centering = LethalCompanyModelVisibility.CenteringOpacity(spectator);
+            if (!LethalCompanyModelVisibility.Allows(spectator.SpectatorClientId) || LethalCompanyModelVisibility.Stowed(spectator) || centering <= 0)
             {
                 // Keep a completed model for instant restoration; no building or fade work while stowed.
                 if (_remoteVisuals.TryGetValue(spectator.SpectatorClientId, out var stowed)) stowed.SetVisible(false);
@@ -214,8 +220,14 @@ public sealed partial class FearModeVisualService : IDisposable
             }
 
             SpectatorPoseState pose = spectator.PoseState;
-            if (_config.Camera.FadeModelsNearby.Value) visual.PrepareFadeMaterials();
+            visual.OpacityCap = centering;
+            if (_config.Camera.FadeModelsNearby.Value || centering < 1) visual.PrepareFadeMaterials();
+            // As for the heads: a model meant to appear translucent waits for its fade, rather than flash opaque.
+            // It still stands in for the default head meanwhile.
+            if ((_config.Camera.FadeModelsNearby.Value || centering < 1) && visual.FadePending)
+            { _activeRemoteIds.Add(spectator.SpectatorClientId); _overrides.SetActive(spectator.SpectatorClientId, active: true); continue; }
             visual.SetWatchedTarget(pose.TargetClientId, pose.TargetPlayerSlotId);
+            visual.SetParty(spectator.SpectatorClientId, _posePresentationService.Parties?.FormationLeader(spectator.SpectatorClientId));
             visual.ApplyOwnerScale(selection!.ModelScale);
             _posePresentationService.Resolve(
                 pose,
@@ -308,6 +320,11 @@ public sealed partial class FearModeVisualService : IDisposable
             cameraState.LocalModelCenter = Quaternion.Inverse(cameraState.RepresentationRotation) * (localBounds.center - cameraState.WorldPosition);
             cameraState.LocalModelRadius = localBounds.extents.magnitude;
             cameraState.HasLocalModelBounds = true;
+            if (_localEmote != null)
+            {
+                _localEmote.SetLayer(_localVisual.Layer);
+                _localEmote.Update(new Vector3(localBounds.center.x, localBounds.max.y + .15f, localBounds.center.z), null);
+            }
         }
         _overrides.SetActive(clientId, active: true);
     }
@@ -324,9 +341,18 @@ public sealed partial class FearModeVisualService : IDisposable
         _posePresentationService.Remove(clientId);
     }
 
+    // Only your own emotes; they show while your model does (third person).
+    private void OnEmote(ulong sender, string text)
+    {
+        if (!_gameAdapter.TryGetLocalDeadPlayerIdentity(out ulong local, out _) || sender != local) return;
+        _localEmote ??= new FloatingHead.EmoteBubbleVisual(Mathf.Max(.005f, _config.NameTagScale.Value * 1.35f));
+        _localEmote.Show(text);
+    }
+
     private void RemoveLocalVisual()
     {
         _spectatorModule.CameraState.HasLocalModelBounds = false;
+        _localEmote?.Hide();
         if (_localVisual != null) ParkVisual(_localVisual);
         _localVisual = null;
         if (_hasLocalVisualClientId)

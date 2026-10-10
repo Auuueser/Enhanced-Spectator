@@ -38,7 +38,7 @@ public sealed partial class SpectatorFreecamController
         _followAnchor=_followRig.Update(target,Time.unscaledDeltaTime,enabled,_settings.Camera.FollowSpeed.Value);
         return _followAnchor;
     }
-    private void ClearFollowRig() { _shiningRig.Clear(); _autoCenter.Clear(); _autoCenterFrame=-1; _followRig.Clear(); _followFrame=-1; _followTarget=null; _followSurface=null; }
+    private void ClearFollowRig() { _shiningRig.Clear(); _autoCenter.Rebase(); _autoCenterFrame=-1; _followRig.Clear(); _followFrame=-1; _followTarget=null; _followSurface=null; }
     private Camera? _ownedCamera;
     private readonly MonitorModePreference _monitorPreference = new MonitorModePreference();
     private readonly MonitorCameraDirector _monitorDirector = new MonitorCameraDirector();
@@ -50,6 +50,23 @@ public sealed partial class SpectatorFreecamController
     private Vector3 _monitorPosition;
     private Quaternion _monitorRotation;
     private float _vanillaDistance = 1.3f;
+    /// <summary>The wheel-set vanilla orbit distance (also the split-screen vanilla large view's).</summary>
+    internal float VanillaDistance => _vanillaDistance;
+    /// <summary>Vanilla's default spectate distance again (a split-screen large view opened anew).</summary>
+    internal void ResetVanillaDistance() => _vanillaDistance = 1.3f;
+    private readonly SpectatorVanillaIdle _vanillaIdle = new();
+    /// <summary>
+    /// Vanilla spectating keeps the game's own view, so it has no idle turn or height of its own; after the idle wait
+    /// with no view mouse or wheel input the ghost simply counts as centred on its teammate (hidden for others,
+    /// translucent while speaking).
+    /// </summary>
+    private bool UsesVanillaView => _wasSpectating && !_state.UserEnabled && !IsPreview && (!_splitScreenActive || _splitScreenFocused);
+    internal bool IsVanillaIdle => UsesVanillaView && _vanillaIdle.IsIdle;
+    /// <summary>
+    /// The last frame the player moved the camera with the mouse (not through a menu, a free cursor or watching
+    /// together); a reader sampling less often than every frame still sees a movement between its samples.
+    /// </summary>
+    internal int CameraMovedFrame { get; private set; } = -1;
     /// <summary>Vanilla orbit distance, reset on death and independent of enhanced entry framing.</summary>
     public bool TryGetVanillaDistance(out float distance)
     {
@@ -113,13 +130,14 @@ public sealed partial class SpectatorFreecamController
     private void SetCameraMode(SpectatorCameraMode mode,bool explicitSelection)
     {
         if (mode == SpectatorCameraMode.Director) return; // Shelved prototypes have no runtime entry.
-        if (!TryGetEligibleSnapshot(out _) || (mode == SpectatorCameraMode.ThirdPerson && !_settings.EnableThirdPerson)) return;
+        if ((!IsPreview && !TryGetEligibleSnapshot(out _)) || (mode == SpectatorCameraMode.ThirdPerson && !_settings.EnableThirdPerson)) return;
+        if (explicitSelection && _splitScreenActive) _splitScreenMode = mode;
         if (mode == SpectatorCameraMode.Monitor
             && !(_adapter is IGameMonitorCameraAdapter { IsMonitorTargetIndoors: true })) return;
         if(explicitSelection) _monitorPreference.Select(mode);
         ClearDeathHandoff();
         _monitorDirector.Clear();
-        ClearFollowRig();
+        ClearFollowRig(); _autoCenter.Clear();
         _monitorEyeFallback = false;
         _monitorRecoveryOpacity = 0;
         (_adapter as IGameMonitorCameraAdapter)?.ClearMonitorRoom();
@@ -151,6 +169,7 @@ public sealed partial class SpectatorFreecamController
     /// <summary>Returns camera ownership to vanilla.</summary>
     public void ReturnToVanilla()
     {
+        if (_splitScreenActive) _splitScreenMode = null;
         _monitorPreference.Select(SpectatorCameraMode.Freecam);
         _state.UserEnabled = false;
         Deactivate(clearAnchor: true);
@@ -163,8 +182,8 @@ public sealed partial class SpectatorFreecamController
         if (ReferenceEquals(Current, this)) Current = null;
     }
 
-    private bool CameraInputBlocked => _adapter is IGameSpectatorCameraAdapter cameraAdapter
-        ? cameraAdapter.IsCameraInputBlocked() : _adapter.IsLocalQuickMenuOpen();
+    private bool CameraInputBlocked => Mirrored || (_adapter is IGameSpectatorCameraAdapter cameraAdapter
+        ? cameraAdapter.IsCameraInputBlocked() : _adapter.IsLocalQuickMenuOpen());
 
     private void AcquireCamera(Camera camera)
     {
@@ -184,7 +203,7 @@ public sealed partial class SpectatorFreecamController
     {
         _monitorDirector.Clear();
         LethalCompanyCameraTransition.Clear();
-        if (_ownedCamera != null) ClearFollowRig();
+        if (_ownedCamera != null) { ClearFollowRig(); _autoCenter.Clear(); }
         _monitorEyeFallback = false;
         _monitorRecoveryOpacity = 0;
         (_adapter as IGameMonitorCameraAdapter)?.ClearMonitorRoom();

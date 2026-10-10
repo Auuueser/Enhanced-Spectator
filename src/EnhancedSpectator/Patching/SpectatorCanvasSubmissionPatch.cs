@@ -12,7 +12,11 @@ internal static class SpectatorCanvasSubmissionPatch
 {
     private static int _nextWarning;
     [HarmonyPrefix, HarmonyPriority(Priority.First)]
-    private static void Prefix() => LethalCompanySpectatorUiVisibility.RestoreRenderers();
+    private static void Prefix()
+    {
+        LethalCompanySplitScreenUiPresentation.Restore();
+        LethalCompanySpectatorUiVisibility.RestoreRenderers();
+    }
     [HarmonyPostfix, HarmonyPriority(Priority.Last)]
     private static void Postfix()
     {
@@ -20,9 +24,11 @@ internal static class SpectatorCanvasSubmissionPatch
         {
             LethalCompanySpectatorHudAdapter.BeforeSubmit();
             LethalCompanySpectatorUiVisibility.BeforeSubmit();
+            LethalCompanySplitScreenUiPresentation.BeforeSubmit();
         }
         catch (System.Exception ex)
         {
+            LethalCompanySplitScreenUiPresentation.Restore();
             LethalCompanySpectatorUiVisibility.Clear();
             if (Time.frameCount >= _nextWarning)
             { _nextWarning = Time.frameCount + 300; ModLog.Warning("Spectator HUD render boundary restored after failure: " + ex.Message); }

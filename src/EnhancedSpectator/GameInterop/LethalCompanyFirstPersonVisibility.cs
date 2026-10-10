@@ -19,8 +19,9 @@ internal static class LethalCompanyFirstPersonVisibility
     {
         Restore();
         var round = StartOfRound.Instance;
-        var target = round != null ? round.localPlayerController?.spectatedPlayerScript : null;
-        if (round == null || camera != round.spectateCamera || target == null || target.isPlayerDead) return;
+        bool splitView = SplitScreenCameraContext.IsPrimary(camera);
+        var target = splitView ? SplitScreenCameraContext.Target : round != null ? round.localPlayerController?.spectatedPlayerScript : null;
+        if (round == null || (!splitView && camera != round.spectateCamera) || target == null || target.isPlayerDead) return;
         try
         {
             if (_target != target || Time.frameCount >= _refreshFrame)

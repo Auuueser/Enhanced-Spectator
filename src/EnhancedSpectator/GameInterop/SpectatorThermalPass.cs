@@ -14,10 +14,11 @@ internal sealed class SpectatorThermalPass : CustomPass
     private static SpectatorThermalPass? _instance;
     private static GameObject? _host;
     private static bool _failed;
+    private static float _unwantedSince=-1;
     private AssetBundle? _bundle;
     private Material? _composite;
     private Shader? _surfaceShader;
-    private RenderTexture? _scene, _heat;
+    private RenderTexture? _scene, _heat, _cover, _blur, _glow;
     private string? _bufferProblem;
     private readonly SpectatorThermalSources _sources=new SpectatorThermalSources();
     private readonly List<Material> _materials=new List<Material>();
@@ -28,13 +29,23 @@ internal sealed class SpectatorThermalPass : CustomPass
     internal static bool Requested(Camera camera) => !_failed && _instance!=null && LethalCompanySpectatorPresentation.ThermalRequested(camera);
     internal static void Tick()
     {
-        var camera=StartOfRound.Instance?.activeCamera;
-        bool wanted=camera!=null && LethalCompanySpectatorPresentation.ThermalRequested(camera);
-        if(!wanted)
+        // Only switching thermal off tears the pass down. A moment without an eligible view (a target change,
+        // a mode or room switch) keeps shaders and the body registry, so bodies never vanish while it refills.
+        if(!LethalCompanySpectatorPresentation.ThermalEnabled)
         {
             if(_instance!=null) { _instance.Release(); _instance=null; if(_host!=null) UnityEngine.Object.Destroy(_host); _host=null; }
             return;
         }
+        var camera=SplitScreenCameraContext.PreviewView ?? StartOfRound.Instance?.activeCamera;
+        bool wanted=camera!=null && LethalCompanySpectatorPresentation.ThermalRequested(camera) || LethalCompanySpectatorPresentation.ThermalAllViews;
+        if(!wanted)
+        {
+            // Large targets are only returned after a sustained absence, never for a one-frame gap.
+            if(_unwantedSince<0) _unwantedSince=Time.unscaledTime;
+            else if(_instance?._scene!=null && Time.unscaledTime-_unwantedSince>2) { _instance.ReleaseTargets(); _instance._sources.Clear(); }
+            return;
+        }
+        _unwantedSince=-1;
         if(_instance==null && !_failed)
         {
             try
@@ -76,7 +87,11 @@ internal sealed class SpectatorThermalPass : CustomPass
         try
         {
             if(_scene==null || _scene.width!=color!.width || _scene.height!=color.height)
-            { ReleaseTargets(); _scene=NativeFadeBuffers.CreateModelBuffer(color!.width,color.height); _heat=NativeFadeBuffers.CreateModelBuffer(color.width,color.height); }
+            {
+                ReleaseTargets(); _scene=NativeFadeBuffers.CreateModelBuffer(color!.width,color.height); _heat=NativeFadeBuffers.CreateModelBuffer(color.width,color.height);
+                int halfWidth=SpectatorThermalGlow.Half(color.width),halfHeight=SpectatorThermalGlow.Half(color.height);
+                _cover=SpectatorThermalGlow.Create(halfWidth,halfHeight); _blur=SpectatorThermalGlow.Create(halfWidth,halfHeight); _glow=SpectatorThermalGlow.Create(halfWidth,halfHeight);
+            }
             var cmd=ctx.cmd; var camera=ctx.hdCamera.camera;
             NativeFadeBuffers.Bind(cmd,_composite,color!,depth!,ctx.cameraColorBuffer.nameID,ctx.cameraDepthBuffer.nameID);
             var viewport=new Rect(0,0,width,height);
@@ -89,37 +104,44 @@ internal sealed class SpectatorThermalPass : CustomPass
             foreach(var actor in _sources.Actors)
             {
                 if(!actor.Alive) continue;
-                foreach(var renderer in actor.Renderers)
-                {
-                    if(!SpectatorThermalSources.Visible(renderer,camera) || !GeometryUtility.TestPlanesAABB(_planes,renderer.bounds)) continue;
-                    renderer.GetSharedMaterials(_materials);
-                    for(int i=0;i<_materials.Count;i++)
-                    {
-                        var material=_materials[i]; if(material==null) continue;
-                        if(!_depthPasses.TryGetValue(material,out int pass))
-                        {
-                            pass=material.FindPass("DepthOnly"); if(pass<0) pass=material.FindPass("DepthForwardOnly");
-                            if(pass>=0 && !material.GetShaderPassEnabled(material.GetPassName(pass))) pass=-1;
-                            _depthPasses.Add(material,pass);
-                        }
-                        if(pass>=0) cmd.DrawRenderer(renderer,material,i,pass);
-                        else cmd.DrawRenderer(renderer,Fallback(material),i,0);
-                    }
-                }
+                foreach(var renderer in actor.Renderers) DrawBody(cmd,camera,renderer);
+                foreach(var group in actor.Lods)
+                    foreach(var level in group)
+                        if(SpectatorThermalSources.AnyVisible(level,camera)) { foreach(var renderer in level) DrawBody(cmd,camera,renderer); break; }
             }
             float near=camera.nearClipPlane,far=camera.farClipPlane;
             float x=SystemInfo.usesReversedZBuffer ? far/near-1 : 1-far/near;
             float y=SystemInfo.usesReversedZBuffer ? 1 : far/near;
             cmd.SetGlobalVector("_ESThermalZ",new Vector4(x,y,x/far,y/far));
             cmd.SetGlobalVector("_ESThermalViewport",new Vector4(width,height,0,0));
+            cmd.SetGlobalInt("_ESThermalPalette",LethalCompanySpectatorPresentation.ThermalPalette);
+            cmd.SetGlobalFloat("_ESThermalStrength",LethalCompanySpectatorPresentation.ThermalStrength);
             cmd.SetGlobalTexture("_ESThermalScene",_scene!);
             cmd.SetGlobalTexture("_ESThermalDepth",_heat!,RenderTextureSubElement.Depth);
             cmd.SetGlobalTexture("_ESThermalSceneDepth",_scene!,RenderTextureSubElement.Depth);
+            SpectatorThermalGlow.Record(cmd,_composite,_cover!,_blur!,_glow!,width,height);
             cmd.SetRenderTarget(ctx.cameraColorBuffer.nameID,0,CubemapFace.Unknown,0); cmd.SetViewport(viewport);
             cmd.DrawProcedural(Matrix4x4.identity,_composite,1,MeshTopology.Triangles,3);
         }
         catch(Exception ex) { _failed=true; ModLog.Warning("Thermal rendering stopped; normal image retained: "+ex.Message); }
         finally { CoreUtils.SetRenderTarget(ctx.cmd,ctx.cameraColorBuffer); }
+    }
+    private void DrawBody(CommandBuffer cmd,Camera camera,Renderer renderer)
+    {
+        if(!SpectatorThermalSources.Visible(renderer,camera) || !GeometryUtility.TestPlanesAABB(_planes,renderer.bounds)) return;
+        renderer.GetSharedMaterials(_materials);
+        for(int i=0;i<_materials.Count;i++)
+        {
+            var material=_materials[i]; if(material==null) continue;
+            if(!_depthPasses.TryGetValue(material,out int pass))
+            {
+                pass=material.FindPass("DepthOnly"); if(pass<0) pass=material.FindPass("DepthForwardOnly");
+                if(pass>=0 && !material.GetShaderPassEnabled(material.GetPassName(pass))) pass=-1;
+                _depthPasses.Add(material,pass);
+            }
+            if(pass>=0) cmd.DrawRenderer(renderer,material,i,pass);
+            else cmd.DrawRenderer(renderer,Fallback(material),i,0);
+        }
     }
     private Material Fallback(Material source)
     {
@@ -135,7 +157,10 @@ internal sealed class SpectatorThermalPass : CustomPass
         _fallbacks.Add(source,material); return material;
     }
     private void ReleaseTargets()
-    { if(_scene!=null) { _scene.Release(); UnityEngine.Object.Destroy(_scene); _scene=null; } if(_heat!=null) { _heat.Release(); UnityEngine.Object.Destroy(_heat); _heat=null; } }
+    {
+        foreach(var texture in new[]{_scene,_heat,_cover,_blur,_glow}) if(texture!=null) { texture.Release(); UnityEngine.Object.Destroy(texture); }
+        _scene=_heat=_cover=_blur=_glow=null;
+    }
     private void Release()
     { ReleaseTargets(); _sources.Clear(); foreach(var m in _fallbacks.Values) UnityEngine.Object.Destroy(m); _fallbacks.Clear(); _depthPasses.Clear(); if(_composite!=null) UnityEngine.Object.Destroy(_composite); if(_bundle!=null) _bundle.Unload(true); }
 }

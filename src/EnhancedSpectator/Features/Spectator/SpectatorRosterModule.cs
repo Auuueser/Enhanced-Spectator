@@ -4,6 +4,7 @@ using EnhancedSpectator.Config;
 using EnhancedSpectator.GameInterop;
 using EnhancedSpectator.Networking;
 using EnhancedSpectator.Runtime;
+using EnhancedSpectator.Features.SplitScreen;
 using UnityEngine;
 
 namespace EnhancedSpectator.Features.Spectator;
@@ -32,10 +33,12 @@ public sealed class SpectatorRosterModule : IFeatureModule, IRuntimeLateTickable
         if (!_config.EnableEnhancedSpectator.Value || !RuntimeConnectionState.CanRunLocalDiagnostics(out _)
             || !_adapter.TryGetLocalTarget(out var local))
         { _adapter.SetVisible(false); _local = null; _fingerprint = null; return; }
+        // The split-screen shows everyone as views, its audience row and viewer counts; the roster is for the
+        // single view only.
+        if (SplitScreenModule.Current?.Active == true) { _adapter.SetVisible(false); _local = null; _fingerprint = null; return; }
         if (_adapter.IsTogglePressed(_config.Camera.ToggleSpectatorRosterKey.Value))
             _config.Camera.ShowSpectatorRoster.Value = !_config.Camera.ShowSpectatorRoster.Value;
-        if (!_config.Camera.ShowSpectatorRoster.Value)
-        { _adapter.SetVisible(false); _local = null; _fingerprint = null; return; }
+        if (!_config.Camera.ShowSpectatorRoster.Value) { _adapter.SetVisible(false); _local = null; _fingerprint = null; return; }
         _adapter.SetVisible(true);
         _adapter.UpdateInteraction(_config.Camera.ToggleSpectatorCursorKey.Value);
         bool changed = _local == null || !_local.Equals(local);

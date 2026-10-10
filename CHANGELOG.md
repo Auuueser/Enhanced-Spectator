@@ -2,6 +2,31 @@
 
 ## 中文
 
+<details open>
+<summary><strong>0.4.5</strong></summary>
+
+### 观战分屏
+
+- 死亡后自动分屏，同时观看最多 31 名存活队友。
+
+### 观众互动
+
+- 观众席显示阵亡玩家与说话状态。
+- 新增表情、观众竞猜与同事评估。
+- 阵亡玩家拥有自己的聊天面板。
+
+### 观战体验
+
+- 观战面板可点击玩家卡片切换目标；热成像新增白热、彩虹配色与强度调节。
+- 玩家名称中的全角空格、零宽字符不再导致名称错乱。
+- 新增局内交互测试与 7 章功能演示。
+
+### 兼容
+
+- 新增 Player_Status_Bars、NiceChat、SpectatePreviousPlayer、HDLethalCompany 兼容。
+
+</details>
+
 <details>
 <summary><strong>0.4.0</strong></summary>
 
@@ -189,6 +214,31 @@
 </details>
 
 ## English
+
+<details open>
+<summary><strong>0.4.5</strong></summary>
+
+### Split-screen spectating
+
+- Split-screen opens after death and shows up to 31 surviving teammates at once.
+
+### Audience
+
+- An audience row shows dead players and who is talking.
+- New emotes, audience bets and colleague reviews.
+- Dead players get their own chat panel.
+
+### Spectating
+
+- Click a watch-panel card to watch that player; thermal adds white-hot and rainbow palettes with intensity.
+- Full-width spaces and zero-width characters no longer garble player names.
+- New in-game interactive preview and 7-chapter feature demo.
+
+### Compatibility
+
+- Added Player_Status_Bars, NiceChat, SpectatePreviousPlayer and HDLethalCompany support.
+
+</details>
 
 <details>
 <summary><strong>0.4.0</strong></summary>

@@ -14,6 +14,12 @@ namespace EnhancedSpectator.GameInterop;
 /// </summary>
 public sealed class LethalCompanyConnectedPlayerStateRepairAdapter : IConnectedPlayerStateRepairAdapter
 {
+    // LC Chinese Project manages real names when installed; synced names then only fill the gaps it leaves.
+    private readonly bool _chineseProjectNames;
+
+    /// <summary>Creates the adapter; <paramref name="chineseProjectNames"/> is whether LC Chinese Project is installed.</summary>
+    public LethalCompanyConnectedPlayerStateRepairAdapter(bool chineseProjectNames) => _chineseProjectNames = chineseProjectNames;
+
     /// <inheritdoc />
     public int RepairConnectedPlayerState(
         IReadOnlyList<PeerIdentityState> peerIdentities,
@@ -152,7 +158,7 @@ public sealed class LethalCompanyConnectedPlayerStateRepairAdapter : IConnectedP
         return repairs;
     }
 
-    private static bool RepairOneConnectedPlayerSlot(
+    private bool RepairOneConnectedPlayerSlot(
         StartOfRound round,
         NetworkManager networkManager,
         QuickMenuManager? quickMenuManager,
@@ -242,7 +248,7 @@ public sealed class LethalCompanyConnectedPlayerStateRepairAdapter : IConnectedP
             && PlayerDisplayNameRules.TryNormalize(identity.DisplayName, out displayName);
         if (updatePlayerNames && hasModIdentityDisplayName)
         {
-            if (!StringComparer.Ordinal.Equals(player.playerUsername, displayName))
+            if (ConnectedPlayerStateRepairRules.ShouldWriteIdentityDisplayName(player.playerUsername, displayName, _chineseProjectNames))
             {
                 player.playerUsername = displayName;
                 repaired = true;

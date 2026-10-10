@@ -153,6 +153,25 @@ internal sealed class NativeFadePass : CustomPass
         foreach (var owner in Owners) if (owner.Frame != Time.frameCount) owner.ClearRequest();
     }
     internal static bool CanTakeCamera(Camera? camera) => CameraBlockReason(camera) == null;
+    /// <summary>
+    /// The pass is being set up for <paramref name="camera"/>: just made, waiting for its first frame there, or custom
+    /// passes still off in the camera's settings (HDLethalCompany with post-processing off turns them off on every game
+    /// camera) until our request turns them on in its next frame, which it only does with model fading on (see
+    /// PrepareCamera). <paramref name="since"/>: since when this camera has been the view.
+    /// </summary>
+    internal static bool Preparing(Camera? camera, out int since)
+    {
+        if (camera != _viewCamera) { _viewCamera = camera; _viewSince = Time.frameCount; }
+        since = _viewSince;
+        return CameraBlockReason(camera) switch
+        {
+            "volume-not-ready" or "waiting-for-camera-buffers" => true,
+            "camera-custom-pass-disabled" => _config != null && LethalCompanyFearViewCamera.ShouldFade(_config),
+            _ => false,
+        };
+    }
+    private static Camera? _viewCamera;
+    private static int _viewSince;
     internal static string? CameraBlockReason(Camera? camera)
     {
         if (_failed) return "backend-failed";

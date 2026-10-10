@@ -26,7 +26,12 @@ public static class LethalCompanyFearViewCamera
         return $"viewer={net?.LocalClientId}, host={net?.IsHost}, dead={local?.isPlayerDead}, camera={camera?.name}, mask={camera?.cullingMask:X8}, cameraState={NativeFadePass.CameraBlockReason(camera) ?? "ready"}";
     }
 
-    internal static Camera? ActiveView => StartOfRound.Instance != null ? StartOfRound.Instance.activeCamera : null;
-    /// <summary>Checks the confirmed active camera reference.</summary>
-    public static bool IsActiveView(Camera camera) => StartOfRound.Instance != null && StartOfRound.Instance.activeCamera == camera;
+    internal static Camera? ActiveView => SplitScreenCameraContext.PreviewView
+        ?? (StartOfRound.Instance != null ? StartOfRound.Instance.activeCamera : null);
+    /// <summary>There is a view that fades models: the game's own, or split-screen's enlarged one (not the grid).</summary>
+    internal static bool HasFadingView => !SplitScreenCameraContext.Active || SplitScreenCameraContext.Focused;
+    /// <summary>Only the focused split-screen view borrows enhanced model fading.</summary>
+    public static bool IsActiveView(Camera camera) => SplitScreenCameraContext.Active
+        ? SplitScreenCameraContext.Focused && SplitScreenCameraContext.IsPrimary(camera)
+        : ActiveView == camera;
 }

@@ -14,6 +14,12 @@ public static class SpectatorVanillaInputGuard
     private static int _internalTargetSwitchDepth;
 
     /// <summary>
+    /// The live split-screen owns clicks: a view is chosen by clicking it, so vanilla's click-to-next-target
+    /// stays off even while the pointer is handed to camera control.
+    /// </summary>
+    internal static bool SplitScreenActive { get; set; }
+
+    /// <summary>
     /// Updates the current input state that should suppress vanilla spectator controls.
     /// </summary>
     public static void Update(
@@ -66,6 +72,8 @@ public static class SpectatorVanillaInputGuard
     {
         if (SpectatorPointerCapture.IsActive && !automatic && _internalTargetSwitchDepth <= 0)
         { reason = "viewer-list pointer is active"; return true; }
+        if (SplitScreenActive && !automatic && _internalTargetSwitchDepth <= 0)
+        { reason = "split-screen owns clicks"; return true; }
         bool ascendKeyHeld = false;
         bool descendKeyHeld = false;
         if (_freecamWantsVerticalInput && _internalTargetSwitchDepth <= 0)

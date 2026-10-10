@@ -51,11 +51,19 @@ public sealed class SpectatorCameraState
     /// Gets the latest locally rendered spectator camera position.
     /// </summary>
     public Vector3 RenderedWorldPosition { get; internal set; }
+    /// <summary>The actual rendered view rotation, after orbit, automatic framing and centering.</summary>
+    public Quaternion RenderedWorldRotation { get; internal set; } = Quaternion.identity;
+    /// <summary>The actual rendered camera's field of view in degrees.</summary>
+    public float RenderedFieldOfView { get; internal set; }
 
     /// <summary>
-    /// Gets whether self-ghost third-person view is active.
+    /// Gets whether self-ghost third-person view is active. Not while watching together: the view is then the
+    /// followed spectator's camera, and this player's ghost is not where it looks from.
     /// </summary>
-    public bool IsThirdPerson => IsActive && Mode == SpectatorCameraMode.ThirdPerson;
+    public bool IsThirdPerson => IsActive && Mode == SpectatorCameraMode.ThirdPerson && !Mirrored;
+
+    /// <summary>Watching together: the view shows the followed spectator's camera (see SpectatorFreecamController.Mirrored).</summary>
+    internal bool Mirrored { get; set; }
 
     /// <summary>Automatic shots temporarily stow the owner's visual without changing their selected model.</summary>
     public bool ModelStowed => IsActive && UserEnabled && SpectatorCameraRules.StowsModel(Mode);

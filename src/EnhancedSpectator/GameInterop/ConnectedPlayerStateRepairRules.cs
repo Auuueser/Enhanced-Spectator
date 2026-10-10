@@ -46,4 +46,16 @@ public static class ConnectedPlayerStateRepairRules
             && !string.IsNullOrWhiteSpace(currentDisplayName)
             && PlayerDisplayNameRules.IsGenericPlayerNumber(currentDisplayName);
     }
+
+    /// <summary>
+    /// Gets whether a peer's synced name should be written over the current one. A name that differs only in white
+    /// space is left alone so the name repairs keep their spacing. With LC Chinese Project installed, its name
+    /// management captures and applies real names, so the synced name only fills empty or generic Player #n slots.
+    /// </summary>
+    public static bool ShouldWriteIdentityDisplayName(string? currentDisplayName, string identityDisplayName, bool chineseProjectNames)
+    {
+        if (PlayerDisplayNameRules.SameIgnoringWhitespace(currentDisplayName, identityDisplayName)) return false;
+        return !chineseProjectNames || string.IsNullOrWhiteSpace(currentDisplayName)
+            || PlayerDisplayNameRules.IsGenericPlayerNumber(currentDisplayName!);
+    }
 }

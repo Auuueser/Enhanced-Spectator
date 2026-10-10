@@ -54,10 +54,11 @@ internal sealed class LethalCompanySpectatorUiVisibility : IGameSpectatorHudAdap
             Canvas? nativeRoot = hud?.HUDContainer != null ? hud.HUDContainer.GetComponentInParent<Canvas>()?.rootCanvas : null;
             self._roots.Clear();
             // Discover current roots at submission so newly created third-party overlays cannot flash for a cache interval.
-            foreach (var canvas in UnityEngine.Object.FindObjectsOfType<Canvas>())
+            foreach (var canvas in UnityEngine.Object.FindObjectsByType<Canvas>(FindObjectsSortMode.None))
             {
                 var root = canvas.rootCanvas;
-                if (root == null || LethalCompanyCameraTransition.Owns(root) || !self._roots.Add(root)) continue;
+                if (root == null || LethalCompanyCameraTransition.Owns(root)
+                    || Features.SplitScreen.SplitScreenModule.Current?.OwnsVideoCanvas(root) == true || !self._roots.Add(root)) continue;
                 if (root.renderMode == RenderMode.WorldSpace && root != nativeRoot
                     && (hud == null || hud.UICamera == null || root.worldCamera != hud.UICamera)) continue;
                 self._scope.Hide(root, hud != null ? hud.playerScreen : null);

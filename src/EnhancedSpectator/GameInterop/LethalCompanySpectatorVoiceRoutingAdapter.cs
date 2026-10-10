@@ -22,18 +22,22 @@ public sealed class LethalCompanySpectatorVoiceRoutingAdapter : IGameSpectatorVo
     private readonly HashSet<ulong> _fallbackBindingLogged = new HashSet<ulong>();
     private readonly IEnhancedSpectatorNetworkService? _networkService;
     private readonly System.Func<bool> _debugEnabled;
+    private readonly System.Func<SpectatorPoseState, Vector3> _voicePosition;
     private PlayerControllerB[]? _cachedPlayerScripts;
     private int _playerLookupCacheFrame = -1;
 
     /// <summary>
-    /// Creates a spectator voice routing adapter.
+    /// Creates a spectator voice routing adapter. <paramref name="voicePosition"/> places a positioned voice (by
+    /// default the published pose; a watch-together follower speaks from its formation place).
     /// </summary>
     public LethalCompanySpectatorVoiceRoutingAdapter(
         IEnhancedSpectatorNetworkService? networkService = null,
-        System.Func<bool>? debugEnabled = null)
+        System.Func<bool>? debugEnabled = null,
+        System.Func<SpectatorPoseState, Vector3>? voicePosition = null)
     {
         _networkService = networkService;
         _debugEnabled = debugEnabled ?? (() => false);
+        _voicePosition = voicePosition ?? (pose => pose.Position);
     }
 
     /// <inheritdoc />
@@ -137,7 +141,7 @@ public sealed class LethalCompanySpectatorVoiceRoutingAdapter : IGameSpectatorVo
             }
 
             CaptureSnapshotIfNeeded(spectator);
-            Vector3 remotePosePosition = poseState.Position;
+            Vector3 remotePosePosition = _voicePosition(poseState);
             VoiceListenerFrame listenerFrame = ResolveVoiceListenerFrame(round);
             Vector3 playbackPosition = SpectatorVoiceSpatializationRules.ResolvePlaybackSourcePosition(
                 remotePosePosition,
@@ -245,6 +249,30 @@ public sealed class LethalCompanySpectatorVoiceRoutingAdapter : IGameSpectatorVo
         _fallbackBindingLogged.Remove(spectatorSlotId);
         _nextPlaybackResolveTime.Remove(spectatorClientId);
         _nextPlaybackResolveTime.Remove(spectatorSlotId);
+    }
+
+    /// <inheritdoc />
+    public bool TryMuteSpectatorVoice(ulong spectatorClientId, ulong spectatorSlotId)
+    {
+        StartOfRound round = StartOfRound.Instance;
+        if (round == null || round.localPlayerController == null) return false;
+        PlayerControllerB? spectator = FindPlayer(round, spectatorClientId, spectatorSlotId);
+        if (spectator == null || spectator == round.localPlayerController || !spectator.isPlayerDead
+            || !EnsureVoicePlayback(round, spectator, TryGetRemotePeerIdentity(spectatorClientId))) return false;
+        CaptureSnapshotIfNeeded(spectator);
+        spectator.voicePlayerState.Volume = 0f;
+        return true;
+    }
+
+    /// <inheritdoc />
+    public void CopyDeadPlayers(List<(ulong ClientId, ulong SlotId)> destination)
+    {
+        destination.Clear();
+        StartOfRound round = StartOfRound.Instance;
+        if (round == null || round.allPlayerScripts == null) return;
+        foreach (PlayerControllerB player in round.allPlayerScripts)
+            if (player != null && player.isPlayerDead && player != round.localPlayerController)
+                destination.Add((player.actualClientId, player.playerClientId));
     }
 
     /// <inheritdoc />

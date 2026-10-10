@@ -26,9 +26,13 @@ public sealed class SpectatorVoiceRoutingService : IDisposable
     private readonly HashSet<ulong> _desiredRoutes = new HashSet<ulong>();
     private readonly List<ulong> _routesToClear = new List<ulong>();
     private readonly List<SpectatorTargetState> _remoteTargets = new List<SpectatorTargetState>();
+    private readonly List<(ulong ClientId, ulong SlotId)> _deadPlayers = new List<(ulong ClientId, ulong SlotId)>();
+    private readonly HashSet<ulong> _handled = new HashSet<ulong>();
     private readonly Dictionary<ulong, RouteSkipDiagnostic> _lastRouteSkips =
         new Dictionary<ulong, RouteSkipDiagnostic>();
     private bool _disposed;
+    private ulong _localClientId;
+    private readonly Func<ulong, ulong?> _followingOf;
 
     /// <summary>
     /// Creates the spectator voice routing service.
@@ -54,6 +58,8 @@ public sealed class SpectatorVoiceRoutingService : IDisposable
         _networkService = networkService ?? throw new ArgumentNullException(nameof(networkService));
         _adapter = adapter ?? throw new ArgumentNullException(nameof(adapter));
         _muteState = muteState ?? throw new ArgumentNullException(nameof(muteState));
+        _followingOf = id => id == _localClientId ? SplitScreen.SplitScreenModule.LocalFollowing
+            : _networkService.TryGetRemoteSpectatorPose(id, out SpectatorPoseState pose) ? pose.FollowingClientId : null;
     }
 
     /// <summary>
@@ -80,23 +86,25 @@ public sealed class SpectatorVoiceRoutingService : IDisposable
             return;
         }
 
-        if (!hasLocalPlayer || !_networkService.IsNetworkAvailable || !_networkService.IsTargetSyncEnabled)
+        if (!hasLocalPlayer)
         {
             ClearAllRoutes();
             return;
         }
 
         _desiredRoutes.Clear();
-        _networkService.CopyRemoteSpectatorTargetsTo(_remoteTargets);
-        if (_remoteTargets.Count == 0)
-        {
-            ClearRoutesNotIn(_desiredRoutes);
-            return;
-        }
+        _handled.Clear();
+        // A local split-screen watcher must mute vanilla dead players even when nobody else has the mod.
+        // Only remote mod routes require a compatible peer; local playback ownership does not.
+        if (_networkService.IsNetworkAvailable && _networkService.IsTargetSyncEnabled)
+            _networkService.CopyRemoteSpectatorTargetsTo(_remoteTargets);
+        else _remoteTargets.Clear();
+        // Split-screen: the audience and the watchers of enlarged views hear each other apart (see SplitScreenPresenceRules).
+        SpectatorSplitView listener = isLocalPlayerDead ? SplitScreen.SplitScreenModule.LocalView : SpectatorSplitView.None;
+        _localClientId = localClientId;
+        ulong localLeader = SpectatorPartyRules.Leader(localClientId, _followingOf);
 
         SpectatorVoiceAudienceMode audienceMode = _config.SpectatorVoiceAudienceMode.Value;
-        SpectatorVoicePlaybackSettings playbackSettings = default;
-        bool hasPlaybackSettings = false;
         foreach (SpectatorTargetState remoteTarget in _remoteTargets)
         {
             if (remoteTarget.LocalClientId == localClientId)
@@ -104,11 +112,22 @@ public sealed class SpectatorVoiceRoutingService : IDisposable
                 continue;
             }
 
+            _handled.Add(remoteTarget.LocalClientId);
+            SplitVoiceRoute split = SplitScreenPresenceRules.Voice(
+                _networkService.TryGetRemoteSpectatorPose(remoteTarget.LocalClientId, out SpectatorPoseState latest) ? latest.SplitView : SpectatorSplitView.None,
+                listener, SpectatorPartyRules.Leader(remoteTarget.LocalClientId, _followingOf) == localLeader);
+            if (split == SplitVoiceRoute.Vanilla) continue;
+            if (split == SplitVoiceRoute.Muted)
+            {
+                Mute(remoteTarget.LocalClientId, remoteTarget.LocalPlayerSlotId);
+                continue;
+            }
+
             bool isWatchingLocalPlayer = RemoteSpectatorVisibilityRules.IsWatchingLocalPlayer(
                 remoteTarget,
                 localClientId,
                 localPlayerSlotId);
-            if (!SpectatorVoiceRoutingRules.ShouldRouteToLocalPlayer(
+            if (split == SplitVoiceRoute.Configured && !SpectatorVoiceRoutingRules.ShouldRouteToLocalPlayer(
                 featureEnabled: true,
                 hasLocalPlayer,
                 isLocalPlayerDead,
@@ -122,15 +141,12 @@ public sealed class SpectatorVoiceRoutingService : IDisposable
             if (!IsRemoteVoiceRoutingPeer(remoteTarget.LocalClientId))
             {
                 DebugRouteSkipped(remoteTarget.LocalClientId, "remote peer did not advertise spectator voice routing capability");
+                if (split != SplitVoiceRoute.Configured) Mute(remoteTarget.LocalClientId, remoteTarget.LocalPlayerSlotId);
                 continue;
             }
 
             SpectatorPoseState? poseState = TryGetMatchingPose(remoteTarget);
-            if (!hasPlaybackSettings)
-            {
-                playbackSettings = CreatePlaybackSettings();
-                hasPlaybackSettings = true;
-            }
+            SpectatorVoicePlaybackSettings playbackSettings = CreatePlaybackSettings(split);
 
             if (_adapter.TryApplySpectatorVoiceRoute(
                 remoteTarget.LocalClientId,
@@ -151,13 +167,32 @@ public sealed class SpectatorVoiceRoutingService : IDisposable
             }
 
             DebugRouteSkipped(remoteTarget.LocalClientId, reason);
-            if (_activeRoutes.Contains(remoteTarget.LocalClientId))
+            // A split watcher must stay silent until positional playback succeeds. Restoring vanilla here would
+            // make a dead listener hear that speaker globally, including during target/pose packet transitions.
+            if (split != SplitVoiceRoute.Configured) Mute(remoteTarget.LocalClientId, remoteTarget.LocalPlayerSlotId);
+            else if (_activeRoutes.Contains(remoteTarget.LocalClientId))
             {
                 ClearRoute(remoteTarget.LocalClientId, reason);
             }
         }
 
+        if (SplitScreenPresenceRules.MutesUnmoddedDead(listener))
+        {
+            _adapter.CopyDeadPlayers(_deadPlayers);
+            foreach (var (clientId, slotId) in _deadPlayers)
+                if (!_handled.Contains(clientId)) Mute(clientId, slotId);
+        }
+
         ClearRoutesNotIn(_desiredRoutes);
+    }
+
+    // Held like a route: cleared (and the voice restored) once the rule no longer mutes it.
+    private void Mute(ulong clientId, ulong slotId)
+    {
+        if (!_adapter.TryMuteSpectatorVoice(clientId, slotId)) return;
+        _desiredRoutes.Add(clientId);
+        _activeSlots[clientId] = slotId;
+        _activeRoutes.Add(clientId);
     }
 
     /// <inheritdoc />
@@ -286,17 +321,19 @@ public sealed class SpectatorVoiceRoutingService : IDisposable
             && ModPeerCapabilityRules.SupportsCurrentSpectatorVoiceToTarget(capability);
     }
 
-    private SpectatorVoicePlaybackSettings CreatePlaybackSettings()
+    private SpectatorVoicePlaybackSettings CreatePlaybackSettings(SplitVoiceRoute route)
     {
+        bool positional = route == SplitVoiceRoute.Positional;
+        // Watching together: the configured volume, without direction or distance (the party shares one camera).
         return new SpectatorVoicePlaybackSettings(
             Mathf.Clamp01(_config.SpectatorVoiceToTargetVolume.Value),
-            _config.SpectatorVoiceUseRemotePosePosition.Value,
+            positional || route != SplitVoiceRoute.Party && _config.SpectatorVoiceUseRemotePosePosition.Value,
             _config.SpectatorVoiceEnableDistanceAttenuation.Value,
             _config.SpectatorVoiceMinDistance.Value,
             _config.SpectatorVoiceMaxDistance.Value,
             _config.SpectatorVoiceRolloffPower.Value,
             _config.SpectatorVoiceMinimumVolume.Value,
-            _config.SpectatorVoiceFallbackTo2DWhenPoseMissing.Value);
+            !positional && _config.SpectatorVoiceFallbackTo2DWhenPoseMissing.Value);
     }
 
     private SpectatorPoseState? TryGetMatchingPose(SpectatorTargetState remoteTarget)

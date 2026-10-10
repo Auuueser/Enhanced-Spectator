@@ -47,7 +47,13 @@ internal sealed class SpectatorHotkeySettings
             new SpectatorHotkeyBinding("运镜模式视角", "Camera choreography view", c.Camera.MonitorKey),
             new SpectatorHotkeyBinding("开关红外热成像", "Toggle thermal imaging", c.Camera.MonitorInfraredKey),
             new SpectatorHotkeyBinding("显示／隐藏观战面板", "Toggle watch panel", c.Camera.ToggleSpectatorRosterKey),
-            new SpectatorHotkeyBinding("观战光标／查看观众", "Viewer-list pointer", c.Camera.ToggleSpectatorCursorKey)
+            new SpectatorHotkeyBinding("观战光标／查看观众", "Viewer-list pointer", c.Camera.ToggleSpectatorCursorKey),
+            new SpectatorHotkeyBinding("开关观战分屏", "Toggle split-screen", c.Camera.SplitScreen.ToggleKey),
+            new SpectatorHotkeyBinding("显示／隐藏分屏时钟", "Toggle split-screen clock", c.Camera.SplitScreen.ClockKey),
+            new SpectatorHotkeyBinding("显示／隐藏分屏测试面板", "Toggle split-screen preview panel", c.Camera.SplitScreen.PreviewPanelKey),
+            new SpectatorHotkeyBinding("观战表情", "Spectator emotes", c.Camera.EmoteKey),
+            new SpectatorHotkeyBinding("观众竞猜", "Audience bets", c.Camera.BetKey),
+            new SpectatorHotkeyBinding("评价队友", "Rate teammates", c.Camera.RateKey)
         };
     }
     internal bool TryAssign(int index, KeyCode key, out int conflict)

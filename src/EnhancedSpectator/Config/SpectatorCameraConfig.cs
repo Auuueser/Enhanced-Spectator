@@ -10,11 +10,18 @@ public sealed class SpectatorCameraConfig
     /// <summary>Binds persistent distances, first-person FOV and cinematic controls.</summary>
     public SpectatorCameraConfig(ConfigFile file)
     {
+        SplitScreen = new SplitScreenConfig(file);
         // Consume the old orphaned value before removing it, including stored false.
         // Backend selection is no longer a user setting.
         var retired = file.Bind("Diagnostics", "NativeFadePrototype", true, "Retired backend selector.");
         file.Remove(retired.Definition);
         ShowKeyHints = file.Bind("Spectator.UI", "ShowKeyHints", true, "Show spectator key hints. 显示观战按键提示。");
+        EmoteKey = file.Bind("Spectator.Social", "EmoteKey", KeyCode.Y, "Open the emote picker while dead; number keys send. 阵亡时打开表情选择，数字键发送。");
+        BetKey = file.Bind("Spectator.Social", "BetKey", KeyCode.U, "Open the audience betting panel while dead. 阵亡时打开观众竞猜面板。");
+        RateKey = file.Bind("Spectator.Social", "RateKey", KeyCode.I, "Open the teammate rating panel while dead; ratings are revealed when the round ends. 阵亡时打开队友评价面板，回合结束后公布。");
+        EnableAudienceBets = file.Bind("Spectator.Social", "EnableAudienceBets", false,
+            "Host only: run audience bets in games you host; clients follow the host. 仅房主生效：在你主持的游戏中开启观众竞猜，客机跟随房主。");
+        ShowEmotes = file.Bind("Spectator.Social", "ShowEmotes", true, "Show other players' spectator emotes above their ghost heads and in the audience row. 显示其他玩家的观战表情（鬼头上方与观众席）。");
         ToggleKeyHintsKey = file.Bind("Spectator.UI", "ToggleKeyHintsKey", KeyCode.H, "Toggle spectator key hints. 切换观战按键提示。");
         ToggleHudKey = file.Bind("Spectator.UI", "ToggleHudKey", KeyCode.F2, "Hide/show spectator HUD for this life. 本次观战隐藏／显示全部界面。");
         ShowSpectatorRoster = file.Bind("Spectator.UI", "ShowSpectatorRoster", false,
@@ -43,10 +50,13 @@ public sealed class SpectatorCameraConfig
         BalanceSpectatorBrightness = file.Bind("Spectator.Image", "BalanceBrightness", true, "Lift spectator midtones locally without changing scene lights or living players. 本机观战中暗部提亮，不改变场景灯光或存活玩家。");
         MonitorInfrared = file.Bind("Spectator.Image", "MonitorInfrared", false,
             "Simulated color thermal imaging in all spectator views, off by default. 全部观战视角使用彩色热成像模拟，默认关闭，仅本机画面，不透墙。");
+        ThermalPalette = file.Bind("Spectator.Image", "ThermalPalette", 0, new ConfigDescription("Thermal colours: 0 ironbow, 1 white hot, 2 rainbow. 热成像配色：0 铁红，1 白热，2 彩虹。", new AcceptableValueRange<int>(0, 2)));
+        ThermalStrength = file.Bind("Spectator.Image", "ThermalStrength", 1f, new ConfigDescription("Thermal intensity; lower values let the normal image show through. 热成像强度，降低后透出正常画面。", new AcceptableValueRange<float>(.25f, 1f)));
         SpectatorBrightness = file.Bind("Spectator.Image", "BrightnessStrength", 2f, new ConfigDescription("Bounded midtone lift, not automatic exposure or night vision. 观战亮度平衡强度，并非自动曝光或夜视。", new AcceptableValueRange<float>(0,2)));
         StabilizeFollow = file.Bind("Spectator.Camera", "StabilizeFollow", true, "Stabilize automatic target translation; preserves manual look and movement. 稳定跟随目标，保留手动转向和移动。");
         AutoCenter = file.Bind("Spectator.Camera", "AutoCenter", true, "Smoothly center the watched player after mouse inactivity. 鼠标闲置后平滑归位，使被观战队友居中。");
-        HideAutoCenteringModels = file.Bind("Spectator.Models", "HideAutoCenteringModels", true, "While alive, hide other spectators who are automatically centering their camera. Local display preference only. 存活时隐藏正在自动归位的其他玩家观战模型，仅影响本机显示。");
+        HideAutoCenteringModels = file.Bind("Spectator.Models", "HideAutoCenteringModels", true, "Hide other spectators while they automatically center their camera, alive or dead. Local display preference only. 隐藏正在自动归位的其他玩家观战模型（存活与死亡视角），仅影响本机显示。");
+        RevealSpeakingCenteringModels = file.Bind("Spectator.Models", "RevealSpeakingCenteringModels", true, "A spectator model hidden for centering shows translucent while its owner speaks, so a voice never comes from nowhere; moving again shows it fully. 因归位而隐藏的观战模型在其玩家说话时以半透明显示，避免只闻其声不见其人；对方再移动镜头即完全显示。");
         FollowSpeed = file.Bind("Spectator.Camera", "FollowSpeed", 1, new ConfigDescription("Follow response: 0 slow, 1 default, 2 fast. 镜头跟随：0 慢，1 默认，2 快。", new AcceptableValueRange<int>(0, 2)));
         TravellingCatchUpDistance = file.Bind("Spectator.Camera", "TravellingCatchUpDistance", 18f,
             new ConfigDescription("Travelling camera increases catch-up speed beyond this target distance and returns to normal pacing when close, in metres. 穿梭镜头超过此距离增加追赶速度，靠近后恢复；米。", new AcceptableValueRange<float>(6f, 60f)));
@@ -88,12 +98,24 @@ public sealed class SpectatorCameraConfig
     public ConfigEntry<bool> ShowKeyHints { get; }
     /// <summary>Hint visibility shortcut.</summary>
     public ConfigEntry<KeyCode> ToggleKeyHintsKey { get; }
+    internal SplitScreenConfig SplitScreen { get; }
     /// <summary>Temporary whole-HUD visibility shortcut.</summary>
     public ConfigEntry<KeyCode> ToggleHudKey { get; }
     /// <summary>Persistent watch-panel preference, disabled by default.</summary>
     public ConfigEntry<bool> ShowSpectatorRoster { get; }
     /// <summary>Persistent shortcut for the complete watch panel, independent of whole-HUD hiding.</summary>
     public ConfigEntry<KeyCode> ToggleSpectatorRosterKey { get; }
+    /// <summary>Opens the emote picker while dead.</summary>
+    public ConfigEntry<KeyCode> EmoteKey { get; }
+    /// <summary>Opens the audience betting panel while dead.</summary>
+    public ConfigEntry<KeyCode> BetKey { get; }
+    /// <summary>Opens the teammate rating panel while dead.</summary>
+    public ConfigEntry<KeyCode> RateKey { get; }
+    /// <summary>Host only: whether audience bets run in games this player hosts (off by default).</summary>
+    public ConfigEntry<bool> EnableAudienceBets { get; }
+    /// <summary>While a living player types: switches their line between nearby players and the spectator chat group.</summary>
+    /// <summary>Shows other players' emotes.</summary>
+    public ConfigEntry<bool> ShowEmotes { get; }
     /// <summary>Shortcut for transient viewer-list pointer mode.</summary>
     public ConfigEntry<KeyCode> ToggleSpectatorCursorKey { get; }
     /// <summary>Modifier for camera-to-model zoom, independent of watched-player distance.</summary>
@@ -162,6 +184,12 @@ public sealed class SpectatorCameraConfig
     public ConfigEntry<bool> AutoCenter { get; }
     /// <summary>Living viewers may locally hide other spectators during their automatic centering.</summary>
     public ConfigEntry<bool> HideAutoCenteringModels { get; }
+    /// <summary>Thermal colour palette: 0 ironbow, 1 white hot, 2 rainbow.</summary>
+    public ConfigEntry<int> ThermalPalette { get; }
+    /// <summary>Thermal blend over the normal image, 0.25 to 1.</summary>
+    public ConfigEntry<float> ThermalStrength { get; }
+    /// <summary>Living viewers see a centering-hidden spectator as a translucent model while it speaks.</summary>
+    public ConfigEntry<bool> RevealSpeakingCenteringModels { get; }
     /// <summary>Slow, default or fast camera response.</summary>
     public ConfigEntry<int> FollowSpeed { get; }
     /// <summary>Target distance in metres that activates additional travelling-camera catch-up speed.</summary>

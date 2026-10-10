@@ -113,6 +113,14 @@ public static class PlayerDisplayNameRules
         return true;
     }
 
+    /// <summary>
+    /// Gets whether two names differ only in white space ("汉          2", "汉 2", "汉2"). Name writers (Steam name
+    /// repair, LC-Chinese-Project, synced identity) disagree on spacing; treating these as one name stops them from
+    /// overwriting each other in turn.
+    /// </summary>
+    public static bool SameIgnoringWhitespace(string? a, string? b)
+        => a != null && b != null && string.Equals(RemoveWhitespace(a), RemoveWhitespace(b), StringComparison.Ordinal);
+
     private static string RemoveWhitespace(string value)
     {
         char[] buffer = new char[value.Length];

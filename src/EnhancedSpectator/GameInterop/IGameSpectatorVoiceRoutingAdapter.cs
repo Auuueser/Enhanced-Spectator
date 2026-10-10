@@ -32,6 +32,12 @@ public interface IGameSpectatorVoiceRoutingAdapter
     /// </summary>
     void ClearSpectatorVoiceRoute(ulong spectatorClientId, ulong spectatorSlotId);
 
+    /// <summary>Silences a dead player for this listener until <see cref="ClearSpectatorVoiceRoute"/>.</summary>
+    bool TryMuteSpectatorVoice(ulong spectatorClientId, ulong spectatorSlotId);
+
+    /// <summary>Every other dead player (with or without the mod).</summary>
+    void CopyDeadPlayers(System.Collections.Generic.List<(ulong ClientId, ulong SlotId)> destination);
+
     /// <summary>
     /// Clears cached lookup state that is only useful while routes are active.
     /// </summary>

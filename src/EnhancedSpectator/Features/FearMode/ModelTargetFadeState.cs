@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using EnhancedSpectator.GameInterop;
 using EnhancedSpectator.Logging;
 using UnityEngine;
@@ -7,11 +8,28 @@ namespace EnhancedSpectator.Features.FearMode;
 internal sealed class ModelTargetFadeState
 {
     internal ulong? ClientId, SlotId;
+    /// <summary>
+    /// Watch-together: the model's owner, and the leader whose formation it stands in. A follower is never drawn more
+    /// opaque than its leader's model was last drawn, so a formation behind a leader faded near the player fades too.
+    /// </summary>
+    internal ulong? Owner, Leader;
+    private readonly bool _publishes;
+    // The opacity each owner's model was last drawn at, and the frame.
+    private static readonly Dictionary<ulong, (float Opacity, int Frame)> Drawn = new();
+
+    /// <param name="publishes">This is the owner's model (not its name): the opacity its followers fade with.</param>
+    internal ModelTargetFadeState(bool publishes = true) => _publishes = publishes;
     private readonly ModelOpacityTransition _transition = new ModelOpacityTransition();
     private float _nextStateDiagnostic;
     private readonly FadeFrameDiagnostics _diagnostics = new FadeFrameDiagnostics();
 
     internal float CurrentOpacity => _transition.Current;
+    private bool _snap;
+    /// <summary>
+    /// The model is (re)appearing: its next update starts at the circle's opacity instead of easing down from opaque.
+    /// A speaking ghost close to the player would otherwise flash in and fade away on every utterance.
+    /// </summary>
+    internal void SnapNext() => _snap = true;
     internal void SeedOpacity(float opacity) => _transition.Seed(opacity);
 
     internal float Update(Vector3 modelPosition, bool enabled, bool ready = true, string key = "unspecified", Transform? modelTransform = null, Bounds? localEnvelope = null)
@@ -28,7 +46,11 @@ internal sealed class ModelTargetFadeState
                 : Vector3.Distance(modelPosition, body.ClosestPoint(modelPosition));
             target = FearModelAppearanceRules.Opacity(distance, true, NativeFadePass.FadeRadius);
         }
+        if (_snap && enabled && ready) { _transition.Seed(target); _snap = false; }
         float opacity = _transition.Update(target, enabled && ready, Time.frameCount, Time.unscaledDeltaTime);
+        if (_publishes && Owner.HasValue) Drawn[Owner.Value] = (opacity, Time.frameCount);
+        if (Leader.HasValue && Drawn.TryGetValue(Leader.Value, out var leader) && Time.frameCount - leader.Frame <= 1)
+            opacity = Mathf.Min(opacity, leader.Opacity);
         if (ModLog.IsDebugEnabled)
         {
             _diagnostics.Sample(Time.frameCount, ready, found, opacity);

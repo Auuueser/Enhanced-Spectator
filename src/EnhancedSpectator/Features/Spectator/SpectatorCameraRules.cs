@@ -32,8 +32,10 @@ public static class SpectatorCameraRules
     public static bool AdjustsDistance(SpectatorCameraMode mode, bool altHeld = false) =>
         mode != SpectatorCameraMode.FirstPerson && mode != SpectatorCameraMode.Monitor && mode != SpectatorCameraMode.Director;
 
+    // First person too: the view is the teammate's own eyes, and a ghost there sat in front of their face for others.
     internal static bool StowsModel(SpectatorCameraMode mode) =>
-        mode == SpectatorCameraMode.Cinematic || mode == SpectatorCameraMode.Monitor || mode == SpectatorCameraMode.Director;
+        mode == SpectatorCameraMode.Cinematic || mode == SpectatorCameraMode.Monitor || mode == SpectatorCameraMode.Director
+        || mode == SpectatorCameraMode.FirstPerson;
 
     /// <summary>Wheel routing distinguishes target-relative travel from the self-model camera boom.</summary>
     internal static SpectatorWheelAction WheelAction(bool enhanced, SpectatorCameraMode mode, bool modifier) => !enhanced

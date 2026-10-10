@@ -22,6 +22,7 @@ public sealed class EnhancedSpectatorRuntimeDriver : MonoBehaviour
     private static int _lastCameraTickInstanceId = int.MinValue;
 
     private bool _intentionalDestroy;
+    private EnhancedSpectatorGuiDriver? _gui;
 
     /// <summary>
     /// Installs or refreshes the runtime driver.
@@ -98,6 +99,9 @@ public sealed class EnhancedSpectatorRuntimeDriver : MonoBehaviour
 
     private void Update()
     {
+        bool wantsGui = _featureBootstrapper?.WantsGui == true;
+        if (wantsGui && _gui == null) _gui = gameObject.AddComponent<EnhancedSpectatorGuiDriver>();
+        else if (!wantsGui && _gui != null) { Destroy(_gui); _gui = null; }
         LethalCompanySpectatorUiVisibility.RestoreRenderers();
         LethalCompanyFirstPersonVisibility.Restore();
         _featureBootstrapper?.Tick();
@@ -109,10 +113,7 @@ public sealed class EnhancedSpectatorRuntimeDriver : MonoBehaviour
         _featureBootstrapper?.LateTick();
     }
 
-    private void OnGUI()
-    {
-        _featureBootstrapper?.GuiTick();
-    }
+    internal static void GuiTick() => _featureBootstrapper?.GuiTick();
 
     private void OnApplicationQuit()
     {

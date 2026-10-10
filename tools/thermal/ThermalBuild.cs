@@ -37,6 +37,7 @@ public static class ThermalBuild
     }
     private static void Validate(Shader shader)
     {
+        Shader.SetGlobalInt("_ESThermalPalette",0); Shader.SetGlobalFloat("_ESThermalStrength",1);
         var composite=new Material(shader); var fixture=new Material(AssetDatabase.LoadAssetAtPath<Shader>("Assets/NativeFadeGpuTest.shader"));
         foreach(bool array in new[]{false,true}) foreach(int size in new[]{32,64}) foreach(float light in new[]{0f,.3f,20f})
         foreach(bool behind in new[]{false,true}) foreach(bool cutout in new[]{false,true}) foreach(bool fallback in new[]{false,true})
@@ -66,7 +67,11 @@ public static class ThermalBuild
             cmd.SetGlobalTexture("_ESThermalScene",copied); cmd.SetGlobalTexture("_ESThermalDepth",heat,RenderTextureSubElement.Depth);
             cmd.SetGlobalTexture("_ESThermalSceneDepth",copied,RenderTextureSubElement.Depth);
             cmd.SetGlobalVector("_ESThermalZ",reversed?new Vector4(99,1,.99f,.01f):new Vector4(-99,100,-.99f,1));
-            cmd.SetRenderTarget(output); cmd.DrawProcedural(Matrix4x4.identity,composite,1,MeshTopology.Triangles,3);
+            var cover=SpectatorThermalGlow.Create(SpectatorThermalGlow.Half(size),SpectatorThermalGlow.Half(size));
+            var blur=SpectatorThermalGlow.Create(SpectatorThermalGlow.Half(size),SpectatorThermalGlow.Half(size));
+            var glow=SpectatorThermalGlow.Create(SpectatorThermalGlow.Half(size),SpectatorThermalGlow.Half(size));
+            SpectatorThermalGlow.Record(cmd,composite,cover,blur,glow,size,size);
+            cmd.SetRenderTarget(output); cmd.SetViewport(new Rect(0,0,size,size)); cmd.DrawProcedural(Matrix4x4.identity,composite,1,MeshTopology.Triangles,3);
             Graphics.ExecuteCommandBuffer(cmd); cmd.Release();
             var old=RenderTexture.active; RenderTexture.active=output;
             var pixels=new Texture2D(size,size,TextureFormat.RGBAFloat,false,true); pixels.ReadPixels(new Rect(0,0,size,size),0,0); pixels.Apply(); RenderTexture.active=old;
@@ -76,19 +81,70 @@ public static class ThermalBuild
             if(cutout) Check(right.r<.6f,"cutout holes remain cool");
             else Check(Mathf.Abs(left.r-right.r)<.01f,"uniform temperature has no screen-side bias");
             UnityEngine.Object.DestroyImmediate(pixels); UnityEngine.Object.DestroyImmediate(surface); UnityEngine.Object.DestroyImmediate(alpha); UnityEngine.Object.DestroyImmediate(mesh);
-            foreach(var rt in new[]{source,copied,heat,output}) { rt.Release(); UnityEngine.Object.DestroyImmediate(rt); }
+            foreach(var rt in new[]{source,copied,heat,output,cover,blur,glow}) { rt.Release(); UnityEngine.Object.DestroyImmediate(rt); }
         }
         Architecture(composite,fixture);
+        Palettes(composite,fixture);
         UnityEngine.Object.DestroyImmediate(composite); UnityEngine.Object.DestroyImmediate(fixture);
+    }
+    // Selectable palettes keep the body distinct from the gray architecture; strength blends over the normal image.
+    private static void Palettes(Material composite,Material actor)
+    {
+        const int size=128;
+        var sceneMaterial=new Material(AssetDatabase.LoadAssetAtPath<Shader>("Assets/ThermalArchitectureTest.shader"));
+        Color Render(int palette,float strength,out Color wall,out Color normalWall)
+        {
+            var scene=NativeFadeBuffers.CreateModelBuffer(size,size); var heat=NativeFadeBuffers.CreateModelBuffer(size,size); var output=NativeFadeBuffers.CreateModelBuffer(size,size);
+            var cover=SpectatorThermalGlow.Create(SpectatorThermalGlow.Half(size),SpectatorThermalGlow.Half(size));
+            var blur=SpectatorThermalGlow.Create(SpectatorThermalGlow.Half(size),SpectatorThermalGlow.Half(size));
+            var glow=SpectatorThermalGlow.Create(SpectatorThermalGlow.Half(size),SpectatorThermalGlow.Half(size));
+            bool reversed=SystemInfo.usesReversedZBuffer; var z=reversed?new Vector4(99,1,.99f,.01f):new Vector4(-99,100,-.99f,1);
+            var cmd=new CommandBuffer();
+            cmd.SetGlobalInt("_ESThermalPalette",palette); cmd.SetGlobalFloat("_ESThermalStrength",strength);
+            cmd.SetGlobalVector("_ESThermalViewport",new Vector4(size,size,0,0)); cmd.SetGlobalVector("_ESThermalZ",z); cmd.SetGlobalFloat("_FixtureLight",.15f);
+            cmd.SetRenderTarget(scene); cmd.SetViewport(new Rect(0,0,size,size)); cmd.DrawProcedural(Matrix4x4.identity,sceneMaterial,0,MeshTopology.Triangles,3);
+            cmd.SetRenderTarget(heat); cmd.ClearRenderTarget(true,true,Color.clear,1);
+            cmd.SetViewport(new Rect(size*.7f,size*.6f,size*.1f,size*.25f)); cmd.SetGlobalFloat("_Depth",(.5f-z.w)/z.z);
+            cmd.DrawProcedural(Matrix4x4.identity,actor,7,MeshTopology.Triangles,3);
+            cmd.SetGlobalInt("_ESFadeReversedZ",reversed?1:0); cmd.SetGlobalTexture("_ESThermalScene",scene);
+            cmd.SetGlobalTexture("_ESThermalSceneDepth",scene,RenderTextureSubElement.Depth); cmd.SetGlobalTexture("_ESThermalDepth",heat,RenderTextureSubElement.Depth);
+            SpectatorThermalGlow.Record(cmd,composite,cover,blur,glow,size,size);
+            cmd.SetRenderTarget(output); cmd.SetViewport(new Rect(0,0,size,size)); cmd.DrawProcedural(Matrix4x4.identity,composite,1,MeshTopology.Triangles,3);
+            cmd.SetGlobalInt("_ESThermalPalette",0); cmd.SetGlobalFloat("_ESThermalStrength",1);
+            Graphics.ExecuteCommandBuffer(cmd); cmd.Release();
+            var pixels=Read(output,size); var source=Read(scene,size);
+            Color core=pixels.GetPixel(size*3/4,(int)(size*.72f)); wall=pixels.GetPixel(size/5,size*3/4); normalWall=source.GetPixel(size/5,size*3/4);
+            if(strength==1) File.WriteAllBytes($"palette-{palette}.png",pixels.EncodeToPNG());
+            UnityEngine.Object.DestroyImmediate(pixels); UnityEngine.Object.DestroyImmediate(source);
+            foreach(var rt in new[]{scene,heat,output,cover,blur,glow}) { rt.Release(); UnityEngine.Object.DestroyImmediate(rt); }
+            return core;
+        }
+        Color iron=Render(0,1,out Color ironWall,out _), white=Render(1,1,out Color whiteWall,out _), rainbow=Render(2,1,out _,out _);
+        Check(Mathf.Abs(white.r-white.g)<.08f && Mathf.Abs(white.g-white.b)<.12f && white.r>whiteWall.r+.15f,"white hot: a bright neutral body over gray architecture");
+        Check(Mathf.Abs(rainbow.b-iron.b)+Mathf.Abs(rainbow.g-iron.g)>.1f && rainbow.r>.5f,"rainbow differs from ironbow and stays hot-coloured");
+        Check(Mathf.Abs(whiteWall.r-ironWall.r)<.0001f,"palettes recolour only bodies and halos, not the architecture");
+        Render(0,.5f,out Color halfWall,out Color normalWall);
+        Check(Mathf.Abs(halfWall.r-(ironWall.r+normalWall.r)*.5f)<.02f,"half strength blends the thermal image evenly with the normal image");
+        UnityEngine.Object.DestroyImmediate(sceneMaterial);
+    }
+    private static Texture2D Read(RenderTexture texture,int size)
+    {
+        var old=RenderTexture.active; RenderTexture.active=texture;
+        var pixels=new Texture2D(size,size,TextureFormat.RGBAFloat,false,true); pixels.ReadPixels(new Rect(0,0,size,size),0,0); pixels.Apply();
+        RenderTexture.active=old; return pixels;
     }
     private static void Architecture(Material composite,Material actor)
     {
         var sceneMaterial=new Material(AssetDatabase.LoadAssetAtPath<Shader>("Assets/ThermalArchitectureTest.shader"));
+        var halo=new System.Collections.Generic.Dictionary<int,Color>(); var ambient=new System.Collections.Generic.Dictionary<int,Color>();
         foreach(int size in new[]{64,128}) foreach(float light in new[]{0f,.15f,20f})
         {
             var scene=NativeFadeBuffers.CreateModelBuffer(size,size);
             var heat=NativeFadeBuffers.CreateModelBuffer(size,size);
             var output=NativeFadeBuffers.CreateModelBuffer(size,size);
+            var cover=SpectatorThermalGlow.Create(SpectatorThermalGlow.Half(size),SpectatorThermalGlow.Half(size));
+            var blur=SpectatorThermalGlow.Create(SpectatorThermalGlow.Half(size),SpectatorThermalGlow.Half(size));
+            var glow=SpectatorThermalGlow.Create(SpectatorThermalGlow.Half(size),SpectatorThermalGlow.Half(size));
             var samples=new Color[2][];
             for(int present=0;present<2;present++)
             {
@@ -110,6 +166,7 @@ public static class ThermalBuild
                 cmd.SetGlobalTexture("_ESThermalScene",scene);
                 cmd.SetGlobalTexture("_ESThermalSceneDepth",scene,RenderTextureSubElement.Depth);
                 cmd.SetGlobalTexture("_ESThermalDepth",heat,RenderTextureSubElement.Depth);
+                SpectatorThermalGlow.Record(cmd,composite,cover,blur,glow,size,size);
                 cmd.SetRenderTarget(output); cmd.SetViewport(new Rect(0,0,size,size));
                 cmd.DrawProcedural(Matrix4x4.identity,composite,1,MeshTopology.Triangles,3);
                 Graphics.ExecuteCommandBuffer(cmd); cmd.Release();
@@ -127,7 +184,19 @@ public static class ThermalBuild
                     float b=pixels.GetPixel(size/5,(int)(size*(.15f+stair*.1f))).r;
                     Check(a-b>.002f,"unlit stair treads retain depth separation");
                 }
-                if(present!=0) Check(pixels.GetPixel(size*3/4,size*3/4).r>.9f,"hot subject separates from gray architecture");
+                if(present!=0)
+                {
+                    Check(pixels.GetPixel(size*3/4,size*3/4).r>.9f,"hot subject separates from gray architecture");
+                    // Actor columns span x .7-.8 of the view. Core hotter than rim, soft edge, warm halo just outside.
+                    int row=(int)(size*.72f), left=Mathf.CeilToInt(size*.7f);
+                    Color core=pixels.GetPixel(size*3/4,row), rim=pixels.GetPixel(left,row), edge=pixels.GetPixel(left-1,row);
+                    // A body narrower than the glow radius has no distinct core; check the wider one.
+                    if(size==128) Check(core.g+core.b>rim.g+rim.b+.02f,"the body core is hotter than its rim");
+                    Check(core.r>.99f && core.b<.6f,"the core stays saturated yellow instead of blowing out to white");
+                    Check(edge.r<core.r || edge.g<core.g-.05f,"the silhouette edge is anti-aliased instead of a hard step");
+                    halo[size]=pixels.GetPixel(left-3,row);
+                }
+                else ambient[size]=pixels.GetPixel(Mathf.CeilToInt(size*.7f)-3,(int)(size*.72f));
                 if(size==128 && present==1)
                 {
                     var preview=new Texture2D(size,size,TextureFormat.RGB24,false);
@@ -137,9 +206,11 @@ public static class ThermalBuild
                 }
                 UnityEngine.Object.DestroyImmediate(pixels);
             }
-            for(int y=0;y<size;y++) for(int x=0;x<size*3/5;x++)
+            // The halo is local: beyond its reach the environment is bit-identical with or without the actor.
+            for(int y=0;y<size;y++) for(int x=0;x<size*.4f;x++)
                 Check(Mathf.Abs(samples[0][y*size+x].r-samples[1][y*size+x].r)<.0001f,"actor entry does not remap the environment");
-            foreach(var rt in new[]{scene,heat,output}) { rt.Release(); UnityEngine.Object.DestroyImmediate(rt); }
+            Check(halo[size].r-halo[size].b>ambient[size].r-ambient[size].b+.01f,"a warm halo surrounds the visible body");
+            foreach(var rt in new[]{scene,heat,output,cover,blur,glow}) { rt.Release(); UnityEngine.Object.DestroyImmediate(rt); }
         }
         UnityEngine.Object.DestroyImmediate(sceneMaterial);
     }

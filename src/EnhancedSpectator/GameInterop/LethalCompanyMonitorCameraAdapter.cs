@@ -7,8 +7,8 @@ public sealed partial class LethalCompanySpectatorAdapter : IGameMonitorCameraAd
 {
     MonitorFraming IGameMonitorFramingAdapter.EvaluateMonitorFraming(Vector3 position, Quaternion rotation)
     {
-        var target=GetLocalPlayer()?.spectatedPlayerScript;
-        var camera=StartOfRound.Instance?.spectateCamera;
+        var target=ViewTarget;
+        var camera=ViewCamera;
         if(target==null || camera==null) return default;
         // Body samples, not cosmetic renderer bounds. No per-frame hierarchy scan or camera mutation.
         Vector3 feet=target.transform.position, right=target.transform.right*.28f;
@@ -17,7 +17,7 @@ public sealed partial class LethalCompanySpectatorAdapter : IGameMonitorCameraAd
         { var body=target.thisController.bounds; feet=body.center-Vector3.up*body.extents.y; height=Mathf.Max(.6f,body.size.y); }
         return MonitorFrameGeometry.Evaluate(feet,right,height,position,rotation,camera.fieldOfView,camera.aspect,MonitorWorldMask);
     }
-    bool IGameMonitorCameraAdapter.IsMonitorTargetIndoors => GetLocalPlayer()?.spectatedPlayerScript is { } target
+    bool IGameMonitorCameraAdapter.IsMonitorTargetIndoors => ViewTarget is { } target
         && !target.isPlayerDead && target.isPlayerControlled && target.isInsideFactory;
     private Dungeon? _monitorDungeon;
     private Tile? _monitorTile;
@@ -32,7 +32,7 @@ public sealed partial class LethalCompanySpectatorAdapter : IGameMonitorCameraAd
     bool IGameMonitorCameraAdapter.TryGetMonitorRoom(out MonitorRoom room)
     {
         room = default;
-        var target = GetLocalPlayer()?.spectatedPlayerScript;
+        var target = ViewTarget;
         var runtime = RoundManager.Instance != null ? RoundManager.Instance.dungeonGenerator : null;
         var dungeon = runtime != null ? runtime.Generator.CurrentDungeon : null;
         if (target == null || target.isPlayerDead || !target.isPlayerControlled || !target.isInsideFactory

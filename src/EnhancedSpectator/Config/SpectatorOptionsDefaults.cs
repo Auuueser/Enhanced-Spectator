@@ -11,8 +11,8 @@ public static class SpectatorOptionsDefaults
     {
         var entries = new List<ConfigEntryBase>
         {
-            config.Camera.HideAutoCenteringModels, config.Camera.AutoCenter, config.Camera.FollowSpeed, config.Camera.HideAllModels, config.Camera.ModelDisplayLimit,
-            config.Camera.StabilizeFollow, config.Camera.BalanceSpectatorBrightness, config.Camera.SpectatorBrightness, config.Camera.MonitorInfrared, config.Camera.AutoMonitorIndoors,
+            config.Camera.HideAutoCenteringModels, config.Camera.RevealSpeakingCenteringModels, config.Camera.AutoCenter, config.Camera.FollowSpeed, config.Camera.HideAllModels, config.Camera.ModelDisplayLimit,
+            config.Camera.StabilizeFollow, config.Camera.BalanceSpectatorBrightness, config.Camera.SpectatorBrightness, config.Camera.MonitorInfrared, config.Camera.ThermalPalette, config.Camera.ThermalStrength, config.Camera.AutoMonitorIndoors,
             config.Camera.FirstPersonFov, config.Camera.FreecamDistance, config.ThirdPersonDistance,
             config.Camera.CinematicDistance, config.Camera.CinematicSpeed, config.Camera.CinematicStyle, config.Camera.MonitorStyle, config.FearModelScaleMultiplier,
             config.RenderFearModelsLocally, config.Camera.GhostVoiceMuted,
@@ -20,7 +20,7 @@ public static class SpectatorOptionsDefaults
             config.Camera.FadeRadius, config.Camera.FadeModelsWhileSpectating, config.Camera.FadeModelsNearOtherPlayers,
             config.Camera.HearOtherFearSounds, config.Camera.RepairPlayerNames, config.Camera.ShowKeyHints, config.Camera.ShowSpectatorRoster
         };
-        if (isHost) entries.Add(config.EnableFearModeAsHost);
+        if (isHost) { entries.Add(config.EnableFearModeAsHost); entries.Add(config.Camera.EnableAudienceBets); }
         var files = new Dictionary<ConfigFile, bool>();
         foreach (var entry in entries)
             if (!files.ContainsKey(entry.ConfigFile)) files.Add(entry.ConfigFile, entry.ConfigFile.SaveOnConfigSet);

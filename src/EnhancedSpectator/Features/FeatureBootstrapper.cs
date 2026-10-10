@@ -6,6 +6,7 @@ using EnhancedSpectator.Config;
 using EnhancedSpectator.Features.ModelInspection;
 using EnhancedSpectator.Features.PlayerStateSync;
 using EnhancedSpectator.Features.Spectator;
+using EnhancedSpectator.Features.SplitScreen;
 using EnhancedSpectator.Features.SpectatorPresence;
 using EnhancedSpectator.Features.VoiceActivity;
 using EnhancedSpectator.Features.VoiceDiagnostics;
@@ -26,12 +27,16 @@ public sealed class FeatureBootstrapper : IDisposable
     private readonly List<IFeatureModule> _features = new List<IFeatureModule>();
     private readonly FeatureRuntimeDispatchLists _runtimeDispatchLists = new FeatureRuntimeDispatchLists();
     private bool _initialized;
+    // The static emote event outlives the modules; it is let go with them.
+    private Action<ulong, string>? _emoteToSplitScreen;
+    private readonly BepInEx.Configuration.ConfigEntry<bool> _screenFallbackVisual;
 
     /// <summary>
     /// Creates the configured feature modules.
     /// </summary>
     public FeatureBootstrapper(EnhancedSpectatorConfig config)
     {
+        _screenFallbackVisual = config.EnableScreenFallbackVisual;
         var nameRepair = new PlayerNameRepairModule(config.Camera);
         _features.Add(nameRepair);
         _runtimeDispatchLists.AddTickable(nameRepair);
@@ -40,10 +45,13 @@ public sealed class FeatureBootstrapper : IDisposable
             IGameSpectatorAdapter gameSpectatorAdapter = new LethalCompanySpectatorAdapter();
             SpectatorFreecamSettings freecamSettings = new SpectatorFreecamSettings(config);
             SpectatorModule spectatorModule = new SpectatorModule(gameSpectatorAdapter, freecamSettings);
+            var splitScreen = new SplitScreenModule(config);
             FearVisualOverrideRegistry fearVisualOverrides = new FearVisualOverrideRegistry();
             RemoteSpectatorPosePresentationService posePresentationService =
                 new RemoteSpectatorPosePresentationService(gameSpectatorAdapter);
             _features.Add(spectatorModule);
+            _features.Add(splitScreen);
+            _runtimeDispatchLists.AddTickable(splitScreen);
             _runtimeDispatchLists.AddTickable(spectatorModule);
             _runtimeDispatchLists.AddLateTickable(spectatorModule);
             _runtimeDispatchLists.AddCameraPreCullTickable(spectatorModule);
@@ -87,6 +95,33 @@ public sealed class FeatureBootstrapper : IDisposable
                 NetworkingModule networkingModule = new NetworkingModule(networkService);
                 _features.Add(networkingModule);
                 _runtimeDispatchLists.AddTickable(networkingModule);
+                var social = new Social.SpectatorSocialModule(config);
+                _features.Add(social);
+                _runtimeDispatchLists.AddTickable(social);
+                _runtimeDispatchLists.AddLateTickable(social);
+                // Watch-together reads other spectators' synced targets; emotes and the emote picker sit above the views.
+                splitScreen.RemoteTarget = clientId => networkService.TryGetRemoteSpectatorTarget(clientId, out var target)
+                    && target.IsSpectating && target.TargetClientId.HasValue && target.TargetPlayerSlotId.HasValue
+                        ? new SplitScreenKey(target.TargetClientId.Value, target.TargetPlayerSlotId.Value) : null;
+                splitScreen.RemoteSplit = clientId => networkService.TryGetRemoteSpectatorPose(clientId, out var pose)
+                    ? (pose.SplitView, pose.FollowingClientId) : (Networking.SpectatorSplitView.None, null);
+                // Watching together shows the followed spectator's camera where their ghost would be drawn here.
+                splitScreen.RemoteCamera = clientId =>
+                {
+                    if (!networkService.TryGetRemoteSpectatorPose(clientId, out var pose) || !pose.IsSpectating
+                        || pose.TargetClientId is not { } target || pose.TargetPlayerSlotId is not { } slot) return null;
+                    posePresentationService.ResolveCamera(pose, out Vector3 position, out Quaternion rotation);
+                    return (position, rotation, pose.CameraMode == 0 ? null : (SpectatorCameraMode)(pose.CameraMode - 1), pose.CameraStyle,
+                        new SplitScreenKey(target, slot), pose.HasCameraPose ? pose.CameraFieldOfView : 0);
+                };
+                splitScreen.IsModPeer = clientId => networkService.TryGetPeerCapability(clientId, out var capability)
+                    && Networking.ModPeerCapabilityRules.SupportsCurrentSpectatorTargetSync(capability);
+                splitScreen.OwnsPointer = social.PickerContains;
+                splitScreen.SocialTest = social.OnPreviewAction;
+                splitScreen.SocialFocus = social.DemoFocus;
+                splitScreen.SocialClick = social.DemoClick;
+                _emoteToSplitScreen = splitScreen.ShowEmote;
+                Social.SpectatorSocialEvents.Emote += _emoteToSplitScreen;
                 var roster = new SpectatorRosterModule(config, networkService, new LethalCompanySpectatorRosterAdapter());
                 _features.Add(roster);
                 _runtimeDispatchLists.AddLateTickable(roster);
@@ -94,7 +129,7 @@ public sealed class FeatureBootstrapper : IDisposable
                 ConnectedPlayerStateRepairModule playerStateRepairModule = new ConnectedPlayerStateRepairModule(
                     config,
                     networkService,
-                    new LethalCompanyConnectedPlayerStateRepairAdapter());
+                    new LethalCompanyConnectedPlayerStateRepairAdapter(LCChineseProjectDetection.IsInstalled()));
                 _features.Add(playerStateRepairModule);
                 _runtimeDispatchLists.AddTickable(playerStateRepairModule);
 
@@ -102,6 +137,7 @@ public sealed class FeatureBootstrapper : IDisposable
                     config,
                     gameSpectatorAdapter,
                     networkService);
+                posePresentationService.Parties = presenceService.Parties;
                 LethalCompanyModelVisibility.Configure(config, presenceService, spectatorModule, posePresentationService);
                 SpectatorPresenceModule presenceModule = new SpectatorPresenceModule(presenceService);
                 _features.Add(presenceModule);
@@ -162,7 +198,14 @@ public sealed class FeatureBootstrapper : IDisposable
                             networkService,
                             () => ModLog.IsDebugEnabled
                                 && config.EnableDebugLogging.Value
-                                && config.DebugSpectatorVoiceRouting.Value),
+                                && config.DebugSpectatorVoiceRouting.Value,
+                            // Outsiders hear a watch-together follower where its model stands, in the formation.
+                            pose =>
+                            {
+                                if (!presenceService.Parties.TryGetFormation(pose.LocalClientId, out _, out _)) return pose.Position;
+                                posePresentationService.Resolve(pose, out Vector3 position, out _, out _);
+                                return position;
+                            }),
                         voiceMuteState));
                 _features.Add(voiceRoutingModule);
                 _runtimeDispatchLists.AddLateTickable(voiceRoutingModule);
@@ -206,6 +249,7 @@ public sealed class FeatureBootstrapper : IDisposable
                 _features.Add(localAvatarModule);
                 _runtimeDispatchLists.AddLateTickable(localAvatarModule);
             }
+            _runtimeDispatchLists.AddLateTickable(splitScreen);
         }
 
         if (config.EnableModelInspection.Value)
@@ -298,6 +342,9 @@ public sealed class FeatureBootstrapper : IDisposable
         _runtimeDispatchLists.CameraPreCullTickAll(camera);
     }
 
+    /// <summary>Whether any feature currently draws with IMGUI.</summary>
+    public bool WantsGui => _initialized && _screenFallbackVisual.Value && _runtimeDispatchLists.GuiTickables.Count > 0;
+
     /// <summary>
     /// Ticks runtime feature modules during Unity OnGUI.
     /// </summary>
@@ -326,6 +373,7 @@ public sealed class FeatureBootstrapper : IDisposable
             _features[index].Dispose();
         }
 
+        if (_emoteToSplitScreen != null) { Social.SpectatorSocialEvents.Emote -= _emoteToSplitScreen; _emoteToSplitScreen = null; }
         LethalCompanyCameraTransition.Clear();
         LethalCompanyModelVisibility.Clear();
         _initialized = false;

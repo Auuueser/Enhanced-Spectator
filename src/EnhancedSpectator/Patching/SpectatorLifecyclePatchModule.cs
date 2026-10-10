@@ -39,6 +39,54 @@ public sealed class SpectatorLifecyclePatchModule : IPatchModule
         harmony.CreateClassProcessor(typeof(InteractPerformedPatch)).Patch();
         harmony.CreateClassProcessor(typeof(ActivateItemPerformedPatch)).Patch();
         harmony.CreateClassProcessor(typeof(SpectatorPointerLookPatch)).Patch();
+        harmony.CreateClassProcessor(typeof(EndGameStatsPatch)).Patch();
+        harmony.CreateClassProcessor(typeof(EndGamePenaltyPatch)).Patch();
+        harmony.CreateClassProcessor(typeof(EndGameLevelPatch)).Patch();
+        harmony.CreateClassProcessor(typeof(EndGameHudPatch)).Patch();
+        harmony.CreateClassProcessor(typeof(EndGameReportTriggerPatch)).Patch();
+        harmony.CreateClassProcessor(typeof(EndGameDayPassedPatch)).Patch();
+        harmony.CreateClassProcessor(typeof(SpectatorChatSubmitPatch)).Patch();
+        harmony.CreateClassProcessor(typeof(SpectatorChatOpenPatch)).Patch();
+        harmony.CreateClassProcessor(typeof(SpectatorChatHearPatch)).Patch();
+    }
+
+    // The stages of the game's end-of-round report, for the split-screen report.
+    [HarmonyPatch(typeof(HUDManager), nameof(HUDManager.FillEndGameStats))]
+    private static class EndGameStatsPatch
+    {
+        private static void Postfix(int scrapCollected) => GameInterop.LethalCompanyRoundResults.StatsFilled(scrapCollected);
+    }
+
+    [HarmonyPatch(typeof(HUDManager), nameof(HUDManager.ApplyPenalty))]
+    private static class EndGamePenaltyPatch
+    {
+        private static void Postfix() => GameInterop.LethalCompanyRoundResults.PenaltyApplied();
+    }
+
+    [HarmonyPatch(typeof(HUDManager), nameof(HUDManager.SetPlayerLevel))]
+    private static class EndGameLevelPatch
+    {
+        private static void Postfix() => GameInterop.LethalCompanyRoundResults.LevelShown();
+    }
+
+    // The game shows its HUD again when its report ends.
+    [HarmonyPatch(typeof(HUDManager), nameof(HUDManager.HideHUD))]
+    private static class EndGameHudPatch
+    {
+        private static void Postfix(bool hide) { if (!hide) GameInterop.LethalCompanyRoundResults.HudShown(); }
+    }
+
+    [HarmonyPatch(typeof(Animator), nameof(Animator.SetTrigger), new Type[] { typeof(string) })]
+    private static class EndGameReportTriggerPatch
+    {
+        [HarmonyPrefix]
+        private static void Prefix(Animator __instance, string name) => GameInterop.LethalCompanyRoundResults.ReportTriggered(__instance, name);
+    }
+
+    [HarmonyPatch(typeof(StartOfRound), nameof(StartOfRound.PassTimeToNextDay))]
+    private static class EndGameDayPassedPatch
+    {
+        private static void Postfix() => GameInterop.LethalCompanyRoundResults.DayPassed();
     }
 
     [HarmonyPatch(typeof(PlayerControllerB), nameof(PlayerControllerB.PlayerLookInput))]

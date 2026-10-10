@@ -92,7 +92,8 @@ public sealed class FearModeQuickMenuModule : IFeatureModule, IRuntimeTickable
         bool quickMenuOpen = _quickMenuAdapter.IsQuickMenuOpen;
         if (RuntimeConnectionState.CanRunLocalDiagnostics(out _)) _service.Catalog.TickPreparation();
         var audit = _thumbnailProvider as FearModelThumbnailService;
-        bool renderedAudit = audit?.TickDeveloperAudit() == true;
+        // The catalog export (a request file in the config folder) is a developer tool: looked for only with diagnostics on.
+        bool renderedAudit = ModLog.IsDebugEnabled && audit?.TickDeveloperAudit() == true;
         if (quickMenuOpen && audit != null && audit.TryGetAuditPage(out int auditPage))
         {
             _panelOpen = true;

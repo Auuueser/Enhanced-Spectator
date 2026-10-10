@@ -9,6 +9,7 @@ internal sealed class ModelCameraFade : IDisposable
 {
     private readonly LethalCompanyNativeFade _native;
     internal bool Ready => _native.Ready;
+    internal bool Pending => _native.Pending;
     internal ModelCameraFade(Renderer[] renderers, string key) => _native = new LethalCompanyNativeFade(renderers, key);
     internal void Prepare() => _native.Prepare();
     internal void Begin(float opacity) { Restore(); _native.Begin(opacity); }

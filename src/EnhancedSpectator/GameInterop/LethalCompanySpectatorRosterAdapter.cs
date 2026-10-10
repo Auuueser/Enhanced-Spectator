@@ -28,9 +28,11 @@ public sealed partial class LethalCompanySpectatorRosterAdapter : IGameSpectator
     private readonly LethalCompanySpectatorAdapter _input = new LethalCompanySpectatorAdapter();
     private readonly TextMeshProUGUI?[] _names = new TextMeshProUGUI?[32], _counts = new TextMeshProUGUI?[32], _watching = new TextMeshProUGUI?[32];
     private readonly Image?[] _backgrounds = new Image?[32], _markers = new Image?[32], _edges = new Image?[4];
+    private readonly Color[] _cardColors = new Color[32];
     private RectTransform? _root;
     private Image? _divider;
     private TextMeshProUGUI? _source, _label, _title, _header, _footer;
+    private Material? _material;
     private SpectatorTargetState? _local;
     private string _targetName = string.Empty;
     private bool _visible;
@@ -39,7 +41,11 @@ public sealed partial class LethalCompanySpectatorRosterAdapter : IGameSpectator
     /// <inheritdoc />
     public bool IsViewReady => _root != null && _source != null && HUDManager.Instance != null
         && _source == HUDManager.Instance.spectatingPlayerText && _title != null && _title.font == _source.font
+        && _root.parent == RosterCanvas(_source)?.transform
         && _root.parent is RectTransform canvas && canvas.rect.size == _canvasSize;
+
+    private static Canvas? RosterCanvas(TextMeshProUGUI source) => Features.SplitScreen.SplitScreenModule.Current?.OverlayCanvas
+        ?? source.GetComponentInParent<Canvas>()?.rootCanvas;
 
     /// <inheritdoc />
     public bool TryGetLocalTarget(out SpectatorTargetState target)
@@ -50,7 +56,7 @@ public sealed partial class LethalCompanySpectatorRosterAdapter : IGameSpectator
         var watched = local != null ? local.spectatedPlayerScript : null;
         if (local == null || !local.isPlayerDead || local.isInGameOverAnimation > 0 || round!.overrideSpectateCamera
             || watched == null || watched.isPlayerDead || watched.disconnectedMidGame || _input.IsUiInputBlocked()) return false;
-        _targetName = watched.playerUsername;
+        _targetName = PlayerDisplayNames.Of(watched);
         if (_local == null || _local.LocalClientId != local.actualClientId || _local.LocalPlayerSlotId != local.playerClientId
             || _local.TargetClientId != watched.actualClientId || _local.TargetPlayerSlotId != watched.playerClientId)
             _local = new SpectatorTargetState(true, local.actualClientId, local.playerClientId, watched.actualClientId, watched.playerClientId, DateTime.UtcNow.Ticks);
@@ -72,7 +78,7 @@ public sealed partial class LethalCompanySpectatorRosterAdapter : IGameSpectator
             if (slot < 0 || slot >= round.allPlayerScripts.Length) continue;
             var player = round.allPlayerScripts[slot];
             if (player == null || player.disconnectedMidGame || player.actualClientId != entry.Key) continue;
-            players.Add(new SpectatorRosterPlayer(entry.Key, (ulong)slot, player.playerUsername, player.isPlayerDead));
+            players.Add(new SpectatorRosterPlayer(entry.Key, (ulong)slot, PlayerDisplayNames.Of(player), player.isPlayerDead));
         }
         players.Sort((a, b) => a.SlotId.CompareTo(b.SlotId));
     }
@@ -81,7 +87,7 @@ public sealed partial class LethalCompanySpectatorRosterAdapter : IGameSpectator
     public void Present(SpectatorRoster roster, SpectatorTargetState local, bool chinese)
     {
         var source = HUDManager.Instance != null ? HUDManager.Instance.spectatingPlayerText : null;
-        var canvas = source != null ? source.GetComponentInParent<Canvas>()?.rootCanvas : null;
+        var canvas = source != null ? RosterCanvas(source) : null;
         var canvasRect = canvas != null ? canvas.transform as RectTransform : null;
         if (source == null || canvasRect == null) { Dispose(); return; }
         if (_root == null || _source != source)
@@ -97,20 +103,22 @@ public sealed partial class LethalCompanySpectatorRosterAdapter : IGameSpectator
             _label = Clone(source, "Watch label"); _title = Clone(source, "Watched player name");
             _header = Clone(source, "Watch summary"); _footer = Clone(source, "Roster coverage");
         }
+        if (_root!.parent != canvasRect) _root.SetParent(canvasRect, false);
         _current = this;
         _latestRoster = roster; _chinese = chinese; _rosterRevision++;
         bool incomplete = roster.UnknownTargets > 0;
         _canvasSize = canvasRect.rect.size;
         int count = roster.Rows.Count;
         int columns = SpectatorRosterPresentation.Columns(count), rows = SpectatorRosterPresentation.RowCount(count);
-        float width = Mathf.Min(columns == 1 ? 250f : columns == 2 ? 380f : 600f, Mathf.Max(140, canvasRect.rect.width - 24));
+        float ui = TextScale(canvasRect);
+        float width = Mathf.Min((columns == 1 ? 250f : columns == 2 ? 380f : 600f) * ui, Mathf.Max(140, canvasRect.rect.width - 24));
         float font = Mathf.Clamp(source.fontSize * .5f, 11f, 13f);
         // Unscaled layout: header (label + name), divider, card grid, footer.
         float pad = 8, nameLine = font * 1.35f, detailLine = font * 1.15f, cardHeight = nameLine + detailLine + 6, gap = 3;
         float headerHeight = font * 1.15f + font * 1.5f, gridTop = pad + headerHeight + 8;
         float footerHeight = font * 1.15f;
         float height = gridTop + (count > 0 ? rows * (cardHeight + gap) : 0) + footerHeight + pad;
-        float scale = Mathf.Min(1, Mathf.Max(70, canvasRect.rect.height * .45f) / height);
+        float scale = ui * Mathf.Min(1, Mathf.Max(70, canvasRect.rect.height * .45f) / (height * ui));
         font *= scale; pad *= scale; nameLine *= scale; detailLine *= scale; cardHeight *= scale; gap *= scale;
         headerHeight *= scale; gridTop *= scale; footerHeight *= scale; height *= scale;
         _root!.sizeDelta = new Vector2(width, height);
@@ -152,7 +160,8 @@ public sealed partial class LethalCompanySpectatorRosterAdapter : IGameSpectator
             var name = _names[i]!; var viewers = _counts[i]!; var watching = _watching[i]!;
             background.gameObject.SetActive(true); marker.gameObject.SetActive(current);
             name.gameObject.SetActive(true); viewers.gameObject.SetActive(true); watching.gameObject.SetActive(true);
-            background.color = current ? RosterStyle.CurrentCard : RosterStyle.Card;
+            background.color = _cardColors[i] = current ? RosterStyle.CurrentCard : RosterStyle.Card;
+            if (i == _hoveredCard) background.color += new Color(.06f, .06f, .06f, .06f);
             PlaceFill(background, x, y, cardWidth, cardHeight);
             PlaceFill(marker, x, y, 2 * Mathf.Max(scale, .5f), cardHeight);
             float inset = 7 * scale;
@@ -219,10 +228,15 @@ public sealed partial class LethalCompanySpectatorRosterAdapter : IGameSpectator
     {
         RectTransform rect = text.rectTransform; rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0,1);
         rect.anchoredPosition = new Vector2(x,-y); rect.sizeDelta = new Vector2(width,height);
-        text.font = _source!.font; text.fontSize = font; text.enableAutoSizing = multiline;
+        text.font = _source!.font; text.fontSharedMaterial = Material(); text.fontSize = font; text.enableAutoSizing = multiline;
         text.fontSizeMin = Mathf.Min(8,font); text.fontSizeMax = font; text.enableWordWrapping = multiline;
         text.overflowMode = TextOverflowModes.Ellipsis; text.alignment = TextAlignmentOptions.TopLeft;
     }
+    // On the split-screen's pixel-sized canvas the panel grows with the screen like the split labels; the game's
+    // own canvas already scales. Both use the dilated label material, so thin 3270 strokes stay whole when small.
+    private static float TextScale(RectTransform canvas)
+        => canvas == Features.SplitScreen.SplitScreenModule.Current?.OverlayCanvas?.transform ? SpectatorTextStyle.UiScale(canvas.rect.size) : 1;
+    private Material Material() => _material ??= SpectatorTextStyle.CreateLabelMaterial(_source!.font);
     /// <inheritdoc />
     public void SetVisible(bool visible)
     {
@@ -241,7 +255,8 @@ public sealed partial class LethalCompanySpectatorRosterAdapter : IGameSpectator
         Array.Clear(_tooltipEdges, 0, 4);
         Array.Clear(_viewerNames, 0, _viewerNames.Length);
         if (_root != null) UnityEngine.Object.Destroy(_root.gameObject);
-        _root = null; _divider = null; _source = _label = _title = _header = _footer = null;
+        if (_material != null) UnityEngine.Object.Destroy(_material);
+        _root = null; _divider = null; _material = null; _hoveredCard = -1; _source = _label = _title = _header = _footer = null;
         Array.Clear(_names, 0, 32); Array.Clear(_counts, 0, 32); Array.Clear(_watching, 0, 32);
         Array.Clear(_backgrounds, 0, 32); Array.Clear(_markers, 0, 32); Array.Clear(_edges, 0, 4);
         if (_current == this) _current = null;

@@ -12,6 +12,8 @@ internal static class LethalCompanyCameraTransition
     internal static bool Owns(Canvas canvas) => canvas == _canvas;
     internal static void Tick()
     {
+        if (SplitScreenCameraContext.Active)
+        { if (_canvas != null) _canvas.gameObject.SetActive(false); return; }
         var round=StartOfRound.Instance;
         var local=round!=null ? round.localPlayerController : null;
         float alpha=round!=null && local!=null && local.isPlayerDead && local.isInGameOverAnimation<=0

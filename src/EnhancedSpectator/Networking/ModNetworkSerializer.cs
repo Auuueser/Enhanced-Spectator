@@ -55,7 +55,13 @@ public static class ModNetworkSerializer
         + FastBufferWriter.GetWriteSize<float>() * 7
         + FastBufferWriter.GetWriteSize<bool>()
         + FastBufferWriter.GetWriteSize<float>() * 7
-        + FastBufferWriter.GetWriteSize<bool>() * 2;
+        + FastBufferWriter.GetWriteSize<bool>() * 2
+        + FastBufferWriter.GetWriteSize<byte>()
+        + FastBufferWriter.GetWriteSize<bool>()
+        + FastBufferWriter.GetWriteSize<ulong>()
+        + FastBufferWriter.GetWriteSize<bool>()
+        + FastBufferWriter.GetWriteSize<byte>() * 2
+        + FastBufferWriter.GetWriteSize<bool>() + FastBufferWriter.GetWriteSize<float>() * 8;
 
     /// <summary>
     /// Gets the byte capacity needed for one peer identity message.
@@ -277,6 +283,21 @@ public static class ModNetworkSerializer
         // Optional suffix: older readers retain their existing prefix and ignore this field.
         writer.WriteValueSafe(state.ModelStowed);
         writer.WriteValueSafe(state.AutoCentering);
+        writer.WriteValueSafe((byte)state.SplitView);
+        writer.WriteValueSafe(state.FollowingClientId.HasValue);
+        if (state.FollowingClientId.HasValue) writer.WriteValueSafe(state.FollowingClientId.Value);
+        writer.WriteValueSafe(state.FirstPersonView);
+        writer.WriteValueSafe(state.CameraMode);
+        writer.WriteValueSafe(state.CameraStyle);
+        // Optional tail: older readers stop after the fields they know. Legacy poses stay byte-identical.
+        if (state.HasCameraPose)
+        {
+            writer.WriteValueSafe(true);
+            writer.WriteValueSafe(state.CameraLocalPosition.x); writer.WriteValueSafe(state.CameraLocalPosition.y); writer.WriteValueSafe(state.CameraLocalPosition.z);
+            writer.WriteValueSafe(state.CameraLocalRotation.x); writer.WriteValueSafe(state.CameraLocalRotation.y);
+            writer.WriteValueSafe(state.CameraLocalRotation.z); writer.WriteValueSafe(state.CameraLocalRotation.w);
+            writer.WriteValueSafe(state.CameraFieldOfView);
+        }
     }
 
     /// <summary>
@@ -377,6 +398,26 @@ public static class ModNetworkSerializer
             if (reader.TryBeginRead(sizeof(byte))) reader.ReadValueSafe(out modelStowed);
             bool autoCentering = false;
             if (reader.TryBeginRead(sizeof(byte))) reader.ReadValueSafe(out autoCentering);
+            byte splitView = 0;
+            if (reader.TryBeginRead(sizeof(byte))) reader.ReadValueSafe(out splitView);
+            bool following = false;
+            ulong followingClientId = 0;
+            if (reader.TryBeginRead(sizeof(byte))) reader.ReadValueSafe(out following);
+            if (following) reader.ReadValueSafe(out followingClientId);
+            bool firstPersonView = false;
+            if (reader.TryBeginRead(sizeof(byte))) reader.ReadValueSafe(out firstPersonView);
+            byte cameraMode = 0, cameraStyle = 0;
+            if (reader.TryBeginRead(sizeof(byte) * 2)) { reader.ReadValueSafe(out cameraMode); reader.ReadValueSafe(out cameraStyle); }
+            bool hasCameraPose = false;
+            Vector3 cameraLocalPosition = Vector3.zero; Quaternion cameraLocalRotation = Quaternion.identity; float cameraFov = 0;
+            if (reader.TryBeginRead(sizeof(byte))) reader.ReadValueSafe(out hasCameraPose);
+            if (hasCameraPose)
+            {
+                reader.ReadValueSafe(out float cx); reader.ReadValueSafe(out float cy); reader.ReadValueSafe(out float cz);
+                reader.ReadValueSafe(out float qx); reader.ReadValueSafe(out float qy); reader.ReadValueSafe(out float qz); reader.ReadValueSafe(out float qw);
+                reader.ReadValueSafe(out cameraFov);
+                cameraLocalPosition = new Vector3(cx, cy, cz); cameraLocalRotation = new Quaternion(qx, qy, qz, qw);
+            }
             state = new SpectatorPoseState(
                 isSpectating,
                 localClientId,
@@ -392,7 +433,8 @@ public static class ModNetworkSerializer
                 hasTargetMotionReference,
                 targetMotionReferenceLocalPosition,
                 targetMotionReferenceLocalRotation,
-                modelStowed, autoCentering);
+                modelStowed, autoCentering, (SpectatorSplitView)splitView, following ? followingClientId : (ulong?)null, firstPersonView,
+                cameraMode, cameraStyle, hasCameraPose, cameraLocalPosition, cameraLocalRotation, cameraFov);
             return true;
         }
         catch (Exception ex)

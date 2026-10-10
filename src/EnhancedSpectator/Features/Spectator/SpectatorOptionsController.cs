@@ -4,20 +4,20 @@ using UnityEngine;
 namespace EnhancedSpectator.Features.Spectator;
 
 /// <summary>Local options actions shared by the retained view and live config entries.</summary>
-public sealed class SpectatorOptionsController
+public sealed partial class SpectatorOptionsController
 {
     private readonly EnhancedSpectatorConfig _config;
     internal SpectatorHotkeySettings Hotkeys { get; }
     /// <summary>Number of compact option rows.</summary>
-    public const int RowCount = 30;
+    public const int RowCount = 51;
     /// <summary>Stable option rows in the three focused pages.</summary>
-    public static int PageForRow(int row) => row == 29 ? 2 : row >= 27 ? 0 : row >= 24 ? 1 : row >= 22 ? 0 : row >= 20 ? 2 : row == 19 ? 0 : row <= 5 || row == 8 || row == 16 || row == 18 ? 0 : row <= 9 || row >= 14 ? 1 : 2;
+    public static int PageForRow(int row) => row == 47 ? 2 : row == 44 || row == 45 ? 0 : row == 40 ? 1 : row >= 30 ? 4 : row == 29 ? 2 : row >= 27 ? 0 : row >= 24 ? 1 : row >= 22 ? 0 : row >= 20 ? 2 : row == 19 ? 0 : row <= 5 || row == 8 || row == 16 || row == 18 ? 0 : row <= 9 || row >= 14 ? 1 : 2;
     /// <summary>View and style cycle through choices with chevrons.</summary>
-    public static bool IsSelector(int row) => row == 0 || row == 16 || row == 18 || row == 23;
+    public static bool IsSelector(int row) => row == 0 || row == 16 || row == 18 || row == 23 || row == 31 || row == 44;
     /// <summary>Whether this row uses a toggle rather than numeric step controls.</summary>
-    public static bool IsToggle(int row) => (row >= 8 && row <= 14) || row == 17 || row == 20 || row == 19 || row == 22 || row == 24 || row == 26 || row == 27 || row == 28 || row == 29;
+    public static bool IsToggle(int row) => (row >= 8 && row <= 14) || row == 17 || row == 20 || row == 19 || row == 22 || row == 24 || row == 26 || row == 27 || row == 28 || row == 29 || row == 30 || row >= 36 && row <= 43 || row == 46 || row == 47 || row == 48 || row == 49 || row == 50;
     /// <summary>Rows per sheet, reserving space for the model/audio header controls.</summary>
-    public static int RowsPerSheet(int page) => page == 0 ? 8 : 6;
+    public static int RowsPerSheet(int page) => page == 0 || page == 4 ? 8 : 6;
     /// <summary>Ordinal within a category, independent of stable row IDs.</summary>
     public static int Ordinal(int row) { int n=0; for(int i=0;i<row;i++) if(PageForRow(i)==PageForRow(row)) n++; return n; }
     /// <summary>Number of sheets in an option category.</summary>
@@ -25,6 +25,20 @@ public sealed class SpectatorOptionsController
     /// <summary>Current value for a toggle row.</summary>
     public bool ToggleValue(int row) => row switch
     {
+        30 => _config.Camera.SplitScreen.AutoEnable.Value,
+        38 => _config.Camera.SplitScreen.MainFollowsGame.Value,
+        39 => _config.Camera.SplitScreen.StartFocused.Value,
+        41 => _config.Camera.SplitScreen.ThermalAllViews.Value,
+        42 => _config.Camera.SplitScreen.ShowSpeaking.Value,
+        43 => _config.Camera.SplitScreen.ShowDeadBar.Value,
+        46 => _config.Camera.SplitScreen.ShowViewerCount.Value,
+        48 => _config.Camera.SplitScreen.StyledReport.Value,
+        49 => _config.Camera.SplitScreen.ShowClock.Value,
+        50 => _config.Camera.SplitScreen.ChatPopup.Value,
+        47 => _config.Camera.EnableAudienceBets.Value,
+        40 => _config.Camera.RevealSpeakingCenteringModels.Value,
+        36 => SplitScreen.SplitScreenModule.Current?.Active == true,
+        37 => SplitScreen.SplitScreenModule.Current?.Preview == true,
         29 => _config.Camera.ShowSpectatorRoster.Value,
         28 => _config.Camera.AutoMonitorIndoors.Value,
         27 => _config.Camera.MonitorInfrared.Value,
@@ -54,6 +68,7 @@ public sealed class SpectatorOptionsController
     /// <summary>Explicit action for boolean options instead of ambiguous plus/minus buttons.</summary>
     public string ToggleActionLabel(int row, bool chinese)
     {
+        if (row == 37) return chinese ? "开始测试" : "Test";
         bool enabled = ToggleValue(row);
         return chinese ? (enabled ? "关闭" : "开启") : (enabled ? "Turn off" : "Turn on");
     }
@@ -61,12 +76,17 @@ public sealed class SpectatorOptionsController
     /// <summary>Formats a row in the selected language.</summary>
     public string Describe(int row, bool chinese)
     {
+        if (row == 44) return (chinese ? "热成像配色：" : "Thermal colours: ") + ThermalPalettes.Name(_config.Camera.ThermalPalette.Value, chinese);
+        if (row == 45) return (chinese ? "热成像强度：" : "Thermal intensity: ") + $"{_config.Camera.ThermalStrength.Value:P0}";
+        if (row == 40) return (chinese ? "归位模型说话时半透明：" : "Show centering speakers translucent: ") + (chinese ? ToggleValue(row) ? "开启" : "关闭" : ToggleValue(row) ? "On" : "Off");
+        if (row == 47) return (chinese ? "观众竞猜（房主决定）：" : "Audience bets (host decides): ") + (chinese ? ToggleValue(row) ? "开启" : "关闭" : ToggleValue(row) ? "On" : "Off");
+        if (row >= 30) return DescribeSplitScreen(row, chinese);
         string[] labels = chinese
             ? ChineseLabels : EnglishLabels;
         if (row == 29) return (chinese ? "显示观战分布：" : "Show watch roster: ") + (chinese ? ToggleValue(row) ? "开启" : "关闭" : ToggleValue(row) ? "On" : "Off");
         if (row == 28) return (chinese ? "进入设施自动穿梭：" : "Auto travelling indoors: ") + (chinese ? ToggleValue(row)?"开启":"关闭" : ToggleValue(row)?"On":"Off");
         if (row == 27) return (chinese ? "红外热成像：" : "Thermal imaging: ") + (chinese ? ToggleValue(row)?"开启":"关闭" : ToggleValue(row)?"On":"Off");
-        if (row == 26) return (chinese ? "存活时隐藏归位模型：" : "Hide centering models (alive): ") + (chinese ? ToggleValue(row) ? "开启" : "关闭" : ToggleValue(row) ? "On" : "Off");
+        if (row == 26) return (chinese ? "隐藏归位模型：" : "Hide centering models: ") + (chinese ? ToggleValue(row) ? "开启" : "关闭" : ToggleValue(row) ? "On" : "Off");
         if (row == 22 || row == 24)
             return (row == 22 ? (chinese ? "闲置自动归位" : "Recenter when idle") : (chinese ? "隐藏所有观战模型" : "Hide all spectator models")) + ": "
                 + (chinese ? ToggleValue(row) ? "开启" : "关闭" : ToggleValue(row) ? "On" : "Off");
@@ -84,7 +104,9 @@ public sealed class SpectatorOptionsController
         if (row == 0)
         {
             var controller = SpectatorFreecamController.Current;
-            int mode = controller?.OwnsCamera == true ? (int)controller.State.Mode + 1 : 0;
+            var split = SplitScreen.SplitScreenModule.Current;
+            int mode = split?.Active == true ? split.SelectedMode.HasValue ? (int)split.SelectedMode.Value + 1 : 0
+                : controller?.OwnsCamera == true ? (int)controller.State.Mode + 1 : 0;
             return labels[row] + ": " + (chinese ? ChineseModes[mode] : EnglishModes[mode]);
         }
         if (IsToggle(row))
@@ -109,9 +131,17 @@ public sealed class SpectatorOptionsController
     /// <summary>Applies one bounded UI step; values persist through their existing config entries.</summary>
     public void Adjust(int row, int direction)
     {
+        if (row == 44) { _config.Camera.ThermalPalette.Value = (_config.Camera.ThermalPalette.Value + direction + 3) % 3; return; }
+        if (row == 45) { _config.Camera.ThermalStrength.Value = Mathf.Clamp(_config.Camera.ThermalStrength.Value + direction * .05f, .25f, 1f); return; }
+        if (row == 40) { _config.Camera.RevealSpeakingCenteringModels.Value = !_config.Camera.RevealSpeakingCenteringModels.Value; return; }
+        if (row == 47) { _config.Camera.EnableAudienceBets.Value = !_config.Camera.EnableAudienceBets.Value; return; }
+        if (row >= 30) { AdjustSplitScreen(row, direction); return; }
         if (row>=19)
         {
-            if(row==29) _config.Camera.ShowSpectatorRoster.Value=!_config.Camera.ShowSpectatorRoster.Value;
+            if(row==29)
+            {
+                _config.Camera.ShowSpectatorRoster.Value = !_config.Camera.ShowSpectatorRoster.Value;
+            }
             else if(row==28) _config.Camera.AutoMonitorIndoors.Value=!_config.Camera.AutoMonitorIndoors.Value;
             else if(row==27) _config.Camera.MonitorInfrared.Value=!_config.Camera.MonitorInfrared.Value;
             else if(row==26) _config.Camera.HideAutoCenteringModels.Value=!_config.Camera.HideAutoCenteringModels.Value;
@@ -128,7 +158,8 @@ public sealed class SpectatorOptionsController
         {
             var controller=SpectatorFreecamController.Current;
             int next=MonitorCameraStyles.Cycle(controller?.EffectiveMonitorStyle ?? _config.Camera.MonitorStyle.Value,direction);
-            if(controller!=null) controller.SelectMonitorStyle(next);
+            if (SplitScreen.SplitScreenModule.Current is { Active: true } split) split.SelectViewStyle(next);
+            else if(controller!=null) controller.SelectMonitorStyle(next);
             else _config.Camera.MonitorStyle.Value=next;
             return;
         }
@@ -141,11 +172,15 @@ public sealed class SpectatorOptionsController
         {
             var controller = SpectatorFreecamController.Current;
             if (controller == null) return;
-            int current = controller.OwnsCamera ? (int)controller.State.Mode + 1 : 0;
+            var split = SplitScreen.SplitScreenModule.Current;
+            bool splitActive = split?.Active == true;
+            int current = splitActive ? split!.SelectedMode.HasValue ? (int)split.SelectedMode.Value + 1 : 0
+                : controller.OwnsCamera ? (int)controller.State.Mode + 1 : 0;
             int next = (current + direction + ChineseModes.Length) % ChineseModes.Length;
-            if (next == (int)SpectatorCameraMode.Monitor + 1 && !controller.CanUseMonitorView)
+            if (next == (int)SpectatorCameraMode.Monitor + 1 && !controller.CanUseMonitorView && !splitActive)
                 next = (next + direction + ChineseModes.Length) % ChineseModes.Length;
-            if (next == 0) controller.ReturnToVanilla();
+            if (splitActive) split!.SelectViewMode(next == 0 ? null : (SpectatorCameraMode)(next - 1));
+            else if (next == 0) controller.ReturnToVanilla();
             else controller.SelectMode((SpectatorCameraMode)(next - 1));
             return;
         }
@@ -172,7 +207,12 @@ public sealed class SpectatorOptionsController
     {
         SpectatorOptionsDefaults.Reset(_config, isHost);
         GameInterop.LethalCompanySpectatorUiVisibility.SetRequested(false);
-        SpectatorFreecamController.Current?.ResetOptionsView();
+        if (SplitScreen.SplitScreenModule.Current is { Active: true } split)
+        {
+            split.SelectViewStyle(_config.Camera.MonitorStyle.Value);
+            split.SelectViewMode(SpectatorCameraMode.Freecam);
+        }
+        else SpectatorFreecamController.Current?.ResetOptionsView();
     }
 
     private static readonly string[] ChineseLabels = { "观战视角", "第一人称 FOV", "观战距离（自由／第三人称）", "镜头到自身模型的距离", "电影跟拍距离", "电影运镜速度", "本机显示缩放", "我的模型大小（同步）", "遇墙自动收近", "靠近队友时渐隐", "接收他人恐惧音效", "玩家名称修复", "显示按键提示", "隐藏观战界面", "死亡观战时也渐隐模型", "渐隐范围（米）" };

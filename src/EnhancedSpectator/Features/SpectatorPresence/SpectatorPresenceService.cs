@@ -24,6 +24,7 @@ public sealed class SpectatorPresenceService : ISpectatorPresenceProvider
     private readonly List<RemoteSpectatorInfo> _publishedSpectators = new List<RemoteSpectatorInfo>();
     private readonly List<SpectatorTargetState> _remoteTargetScratch = new List<SpectatorTargetState>();
     private readonly LocalSpectatorPresenceState _activePresenceState;
+    private readonly Func<ulong, SpectatorPoseState?> _poseOf;
 
     /// <summary>
     /// Creates a spectator presence service.
@@ -38,12 +39,16 @@ public sealed class SpectatorPresenceService : ISpectatorPresenceProvider
         _networkService = networkService ?? throw new ArgumentNullException(nameof(networkService));
         _activePresenceState = new LocalSpectatorPresenceState(true, _publishedSpectators);
         Current = LocalSpectatorPresenceState.Empty;
+        _poseOf = id => _networkService.TryGetRemoteSpectatorPose(id, out SpectatorPoseState pose) ? pose : null;
     }
 
     /// <summary>
     /// Gets the latest inferred local presence state.
     /// </summary>
     public LocalSpectatorPresenceState Current { get; private set; }
+
+    /// <summary>The watch-together parties, rebuilt with the presence state.</summary>
+    public SpectatorParties Parties { get; } = new SpectatorParties();
 
     /// <summary>
     /// Updates remote spectator presence inference.
@@ -81,6 +86,7 @@ public sealed class SpectatorPresenceService : ISpectatorPresenceProvider
             _remoteTargetScratch);
 
         PublishPresenceChanges();
+        Parties.Update(localClientId, SplitScreen.SplitScreenModule.LocalFollowing, _poseOf, _remoteTargetScratch);
     }
 
     /// <summary>
@@ -232,6 +238,7 @@ public sealed class SpectatorPresenceService : ISpectatorPresenceProvider
         _candidateSpectators.Clear();
         _publishedSpectators.Clear();
         _remoteTargetScratch.Clear();
+        Parties.Clear();
         Current = LocalSpectatorPresenceState.Empty;
     }
 

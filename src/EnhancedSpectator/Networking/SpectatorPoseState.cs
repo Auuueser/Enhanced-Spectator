@@ -30,7 +30,16 @@ public sealed class SpectatorPoseState
         Vector3 targetMotionReferenceLocalPosition = default,
         Quaternion targetMotionReferenceLocalRotation = default,
         bool modelStowed = false,
-        bool autoCentering = false)
+        bool autoCentering = false,
+        SpectatorSplitView splitView = SpectatorSplitView.None,
+        ulong? followingClientId = null,
+        bool firstPersonView = false,
+        byte cameraMode = 0,
+        byte cameraStyle = 0,
+        bool hasCameraPose = false,
+        Vector3 cameraLocalPosition = default,
+        Quaternion cameraLocalRotation = default,
+        float cameraFieldOfView = 0)
     {
         IsSpectating = isSpectating;
         LocalClientId = localClientId;
@@ -48,7 +57,40 @@ public sealed class SpectatorPoseState
         TargetMotionReferenceLocalRotation = targetMotionReferenceLocalRotation;
         ModelStowed = modelStowed;
         AutoCentering = autoCentering;
+        SplitView = splitView;
+        FollowingClientId = followingClientId;
+        FirstPersonView = firstPersonView;
+        CameraMode = cameraMode;
+        CameraStyle = cameraStyle;
+        HasCameraPose = hasCameraPose; CameraLocalPosition = cameraLocalPosition;
+        CameraLocalRotation = cameraLocalRotation; CameraFieldOfView = cameraFieldOfView;
     }
+
+    /// <summary>The optional rendered camera pose, separate from the ghost/voice position.</summary>
+    public bool HasCameraPose { get; }
+    /// <summary>Rendered camera offset in the logical pose's coordinates, retaining its motion compensation.</summary>
+    public Vector3 CameraLocalPosition { get; }
+    /// <summary>Rendered camera rotation relative to the logical pose.</summary>
+    public Quaternion CameraLocalRotation { get; }
+    /// <summary>Rendered camera vertical field of view in degrees.</summary>
+    public float CameraFieldOfView { get; }
+
+    /// <summary>
+    /// The camera this spectator watches through: 0 the game's own view, otherwise 1 + <c>SpectatorCameraMode</c>
+    /// (a follower in "watch together" takes the same camera). <see cref="CameraStyle"/> is the choreography style.
+    /// </summary>
+    public byte CameraMode { get; }
+    /// <summary>The choreography (monitor) style of <see cref="CameraMode"/>.</summary>
+    public byte CameraStyle { get; }
+
+    /// <summary>Watching through the target's eyes: the watched player is told when this spectator speaks.</summary>
+    public bool FirstPersonView { get; }
+
+    /// <summary>The audience member this split-screen spectator watches together with, if any.</summary>
+    public ulong? FollowingClientId { get; }
+
+    /// <summary>Split-screen audience or watching state; decides who sees and hears this spectator.</summary>
+    public SpectatorSplitView SplitView { get; }
 
     /// <summary>
     /// Gets whether the local player is spectating.
@@ -127,6 +169,12 @@ public sealed class SpectatorPoseState
         if (IsSpectating != other.IsSpectating
             || ModelStowed != other.ModelStowed
             || AutoCentering != other.AutoCentering
+            || SplitView != other.SplitView
+            || FollowingClientId != other.FollowingClientId
+            || FirstPersonView != other.FirstPersonView
+            || CameraMode != other.CameraMode
+            || CameraStyle != other.CameraStyle
+            || HasCameraPose != other.HasCameraPose
             || LocalClientId != other.LocalClientId
             || LocalPlayerSlotId != other.LocalPlayerSlotId
             || TargetClientId != other.TargetClientId
@@ -155,6 +203,9 @@ public sealed class SpectatorPoseState
             : other.HasMotionReference ? other.MotionReferenceLocalRotation : other.Rotation;
         float positionDeltaSqr = (comparablePosition - otherComparablePosition).sqrMagnitude;
         float rotationDot = Mathf.Abs(Quaternion.Dot(comparableRotation, otherComparableRotation));
-        return positionDeltaSqr <= PositionEpsilonSqr && rotationDot >= RotationDotEpsilon;
+        return positionDeltaSqr <= PositionEpsilonSqr && rotationDot >= RotationDotEpsilon
+            && (!HasCameraPose || (CameraLocalPosition - other.CameraLocalPosition).sqrMagnitude <= PositionEpsilonSqr
+                && Mathf.Abs(Quaternion.Dot(CameraLocalRotation, other.CameraLocalRotation)) >= RotationDotEpsilon
+                && Mathf.Abs(CameraFieldOfView - other.CameraFieldOfView) < .01f);
     }
 }

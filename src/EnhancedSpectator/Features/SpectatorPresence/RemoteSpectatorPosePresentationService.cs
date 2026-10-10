@@ -34,8 +34,37 @@ public sealed class RemoteSpectatorPosePresentationService
             out _);
     }
 
+    /// <summary>Watch-together parties: a follower is presented at its place in its leader's formation.</summary>
+    public SpectatorParties? Parties { get; set; }
+
+    /// <summary>The rendered view, independent of a model's formation place, in its locally resolved moving frame.</summary>
+    public void ResolveCamera(SpectatorPoseState pose, out Vector3 position, out Quaternion rotation)
+    {
+        ResolveOwn(pose, out position, out rotation, out _, out _);
+        if (!pose.HasCameraPose) return;
+        position += rotation * pose.CameraLocalPosition;
+        rotation *= pose.CameraLocalRotation;
+    }
+
     /// <summary>Resolves the current pose and moving reference used for presentation smoothing.</summary>
     public void Resolve(
+        SpectatorPoseState pose,
+        out Vector3 position,
+        out Quaternion rotation,
+        out bool motionReferenced,
+        out SpectatorMotionReferencePose motionReference)
+    {
+        if (Parties != null && Parties.TryGetFormation(pose.LocalClientId, out SpectatorPoseState leader, out int slot))
+        {
+            // Moving with the leader's frame too, so the formation keeps its shape between samples.
+            ResolveOwn(leader, out position, out rotation, out motionReferenced, out motionReference);
+            position = SpectatorParties.Place(slot, position, rotation);
+            return;
+        }
+        ResolveOwn(pose, out position, out rotation, out motionReferenced, out motionReference);
+    }
+
+    private void ResolveOwn(
         SpectatorPoseState pose,
         out Vector3 position,
         out Quaternion rotation,

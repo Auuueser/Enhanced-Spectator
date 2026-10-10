@@ -13,7 +13,8 @@ internal static class LethalCompanyFirstPersonPose
     private static int _frame = -1;
     private static bool Watching(PlayerControllerB player) => SpectatorFreecamController.Current is { OwnsCamera: true } controller
         && controller.State.Mode == SpectatorCameraMode.FirstPerson
-        && StartOfRound.Instance != null && StartOfRound.Instance.localPlayerController?.spectatedPlayerScript == player;
+        && (SplitScreenCameraContext.PreviewView != null ? SplitScreenCameraContext.Target == player
+            : StartOfRound.Instance != null && StartOfRound.Instance.localPlayerController?.spectatedPlayerScript == player);
     private static bool Receiving(PlayerControllerB player) => !player.IsOwner
         && player.__rpc_exec_stage == NetworkBehaviour.__RpcExecStage.Execute && Watching(player);
     private static void EnsureTarget(PlayerControllerB target)
@@ -36,7 +37,7 @@ internal static class LethalCompanyFirstPersonPose
     internal static Quaternion Rotation(PlayerControllerB target)
     {
         var camera = target.gameplayCamera.transform;
-        if (!Watching(target) || target.inVehicleAnimation || target.isClimbingLadder || target.jetpackControls)
+        if (target.IsOwner || !Watching(target) || target.inVehicleAnimation || target.isClimbingLadder || target.jetpackControls)
         { Clear(); return camera.rotation; }
         EnsureTarget(target);
         if (_frame != Time.frameCount) { _frame = Time.frameCount; Look.Advance(Time.unscaledDeltaTime); }

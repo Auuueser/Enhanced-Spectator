@@ -30,6 +30,8 @@ internal static class SpectatorInteriorVisibility
     // transform: those are shared with vanilla, the radar camera and other rendering mods.
     internal static void Refresh(AdjacentRoomCullingModified culler)
     {
+        if (SplitScreenCameraContext.Active)
+        { Release(); SplitScreenInteriorVisibility.Refresh(culler); return; }
         var round=StartOfRound.Instance;
         if(round!=null && round.occlusionCuller!=culler) return;
         var local=round!=null ? round.localPlayerController : null;
@@ -44,10 +46,10 @@ internal static class SpectatorInteriorVisibility
         { Release(); return; }
         if(livingSubject && _target!=target) { Release(); _target=target; _nextRepair=0; _nextReport=0; }
         Tile? selected=holdingDeath ? _subjectRoom
-            : ResolveRoom(culler,target!.transform.position+Vector3.up*.5f,_subjectRoom,out _selection);
+            : ResolveRoom(culler,target!.transform.position+Vector3.up*.5f,_culler==culler ? _subjectRoom : null,out _selection);
         if(holdingDeath) _selection="death-hold";
         if(selected==null) { _selection="no-registered-room"; return; }
-        Tile? cameraRoom=spatialCamera ? ResolveRoom(culler,cameraPosition,_cameraRoom,out _) : null;
+        Tile? cameraRoom=spatialCamera ? ResolveRoom(culler,cameraPosition,_culler==culler ? _cameraRoom : null,out _) : null;
         string selection=_selection;
         if(_culler!=culler || _subjectRoom!=selected || _cameraRoom!=cameraRoom) Release();
         _culler=culler; _subjectRoom=selected; _cameraRoom=cameraRoom; _target=target; _selection=selection;
@@ -84,7 +86,10 @@ internal static class SpectatorInteriorVisibility
         if(changed) culler.RefreshDoorVisibilities();
     }
 
-    private static Tile? ResolveRoom(AdjacentRoomCullingModified culler,Vector3 sample,Tile? previous,out string selection)
+    // Full room scans; lets fixtures prove that unchanged samples reuse their room.
+    internal static int RoomScans;
+
+    internal static Tile? ResolveRoom(AdjacentRoomCullingModified culler,Vector3 sample,Tile? previous,out string selection)
     {
         var special=RoundManager.Instance!=null ? RoundManager.Instance.startRoomSpecialBounds : null;
         if(special!=null && special.bounds.Contains(sample))
@@ -93,7 +98,9 @@ internal static class SpectatorInteriorVisibility
             if(entrance!=null) { selection="special-entrance"; return entrance; }
         }
         selection="bounds";
-        if(_culler==culler && previous!=null && previous.Bounds.Contains(sample)) return previous;
+        // Callers drop their previous room whenever the culler changes, so it always belongs to this dungeon.
+        if(previous!=null && previous.Bounds.Contains(sample)) return previous;
+        RoomScans++;
         Tile? selected=null;
         float smallest=float.PositiveInfinity;
         foreach(var tile in culler.allTiles)
@@ -147,7 +154,7 @@ internal static class SpectatorInteriorVisibility
         return $"[InteriorDiag render-sync-r2] dead={local?.isPlayerDead},inside={target?.isInsideFactory},target={target?.transform.name},position={target?.transform.position},override={round.overrideSpectateCamera},cullerActive={culler?.isActiveAndEnabled},ready={culler?.Ready},tiles={culler?.allTiles.Count},visible={culler?.visibleTiles.Count},selection={_selection},room={_subjectRoom?.transform.name},added={Added.Count},renderers={total},enabled={enabled},active={active},forceOff={forced},inMask={masked},camera={camera.transform.position},mask={camera.cullingMask:X8}";
     }
 
-    private static bool NeedsRendererRepair(AdjacentRoomCullingModified culler,Tile tile)
+    internal static bool NeedsRendererRepair(AdjacentRoomCullingModified culler,Tile tile)
     {
         if(!culler.tileRenderers.TryGetValue(tile,out var renderers)) return false;
         foreach(var renderer in renderers)
@@ -158,6 +165,7 @@ internal static class SpectatorInteriorVisibility
 
     internal static void AfterVanillaRefresh(AdjacentRoomCullingModified culler)
     {
+        SplitScreenInteriorVisibility.AfterVanillaRefresh(culler);
         // Vanilla has recomputed its own set and consumed the previous additions. Anything
         // surviving that refresh belongs to vanilla, even if we originally made it visible.
         if(_culler==culler) Added.Clear();

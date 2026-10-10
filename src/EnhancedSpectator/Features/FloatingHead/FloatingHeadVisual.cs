@@ -15,6 +15,7 @@ public sealed partial class FloatingHeadVisual : IDisposable
     private readonly MeshRenderer? _meshRenderer;
     private readonly MeshFilter? _meshFilter;
     private readonly NameTagVisual? _nameTag;
+    private EmoteBubbleVisual? _emote;
     private readonly Color _baseColor;
     private readonly float _baseAlpha;
     private readonly bool _colliderRemoved;
@@ -442,7 +443,31 @@ public sealed partial class FloatingHeadVisual : IDisposable
         }
 
         _nameTag.ApplyPose(State.Position, _gameObject.transform.rotation, camera, minimumHeightOffset);
+        if (_emote != null) _emote.Update(State.Position + Vector3.up * (Mathf.Max(_nameTag.HeightOffset, minimumHeightOffset) + _emote.Clearance), camera);
     }
+
+    /// <summary>A ghost without a name tag (your own, in third person): the emote sits at the name's height.</summary>
+    internal void UpdateEmote(float height)
+    {
+        if (!_disposed && _emote != null && State.IsVisible) _emote.Update(State.Position + Vector3.up * height, null);
+    }
+
+    /// <summary>Pops an emote above this spectator's head (and name tag).</summary>
+    public void ShowEmote(string text, float size)
+    {
+        if (_disposed) return;
+        _emote ??= new EmoteBubbleVisual(size);
+        if (_currentLayer >= 0) _emote.SetLayer(_currentLayer);
+        _emote.Show(text);
+    }
+    /// <summary>An emote is showing; like speaking, it reveals a model hidden for idle centering.</summary>
+    public bool EmoteActive => _emote?.Active == true;
+
+    /// <summary>Once per frame: the speaker icon beside the name follows the spectator's voice.</summary>
+    internal void SetSpeaking(bool speaking) { if (!_disposed) _nameTag?.SetSpeaking(speaking, Time.unscaledDeltaTime); }
+
+    /// <summary>Turns the name tag toward another view's camera without moving it.</summary>
+    public void FaceNameTag(Camera camera) { if (!_disposed && State.IsVisible) { _nameTag?.Face(camera); _emote?.Face(camera); } }
 
     /// <summary>
     /// Updates the optional name tag text if it has changed.
@@ -491,6 +516,7 @@ public sealed partial class FloatingHeadVisual : IDisposable
         _currentLayer = layer;
 
         _nameTag?.SetLayer(layer);
+        _emote?.SetLayer(layer);
     }
 
     /// <summary>
@@ -508,14 +534,16 @@ public sealed partial class FloatingHeadVisual : IDisposable
             if (!visible)
             {
                 _headFade?.Disable();
-                _targetFade.Update(Vector3.zero, false);
+                _targetFade.Update(Vector3.zero, false); _nameFade.Update(Vector3.zero, false);
                 _hasPose = _hasNetworkSample = _hasNetworkSampleVelocity = _hasMotionReference = false;
                 _positionVelocity = Vector3.zero;
             }
+            else { _targetFade.SnapNext(); _nameFade.SnapNext(); }
             _gameObject.SetActive(visible);
         }
 
         _nameTag?.SetVisible(visible);
+        if (!visible) _emote?.Hide();
         State = new FloatingHeadVisualState(
             SpectatorClientId,
             SpectatorSlotId,
@@ -549,6 +577,7 @@ public sealed partial class FloatingHeadVisual : IDisposable
         }
 
         _nameTag?.Dispose();
+        _emote?.Dispose();
     }
 
     private void ApplyMaterialVoiceLevel(float voiceLevel)

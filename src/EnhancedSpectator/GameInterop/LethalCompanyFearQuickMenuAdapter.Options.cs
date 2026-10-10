@@ -17,10 +17,17 @@ public sealed partial class LethalCompanyFearQuickMenuAdapter
     private TextMeshProUGUI? _resetText;
     private TextMeshProUGUI? _optionsButtonText;
     private int _optionsPage, _optionsSheet;
+    // Visible rows of the current page (all, or only those changed from their defaults).
+    private readonly System.Collections.Generic.List<int> _pageRows = new System.Collections.Generic.List<int>(SpectatorOptionsController.RowCount);
+    private bool _changedOnly;
+    private Button? _changedOnlyButton;
+    private TextMeshProUGUI? _changedOnlyText;
+    private int SheetCount => System.Math.Max(1, (_pageRows.Count + SpectatorOptionsController.RowsPerSheet(_optionsPage) - 1) / SpectatorOptionsController.RowsPerSheet(_optionsPage));
     private GameObject? _optionsPager;
     private TextMeshProUGUI? _optionsPageLabel;
-    private readonly Button?[] _optionTabs = new Button?[4];
-    private readonly TextMeshProUGUI?[] _optionTabLabels = new TextMeshProUGUI?[4];
+    private readonly Button?[] _optionTabs = new Button?[5];
+    private readonly TextMeshProUGUI?[] _optionTabLabels = new TextMeshProUGUI?[5];
+    private readonly Button?[] _optionMinus = new Button?[SpectatorOptionsController.RowCount], _optionPlus = new Button?[SpectatorOptionsController.RowCount];
     private readonly GameObject?[] _optionRows = new GameObject?[SpectatorOptionsController.RowCount];
     private readonly Button?[] _optionToggles = new Button?[SpectatorOptionsController.RowCount];
     private readonly TextMeshProUGUI?[] _optionLabels = new TextMeshProUGUI?[SpectatorOptionsController.RowCount];
@@ -29,8 +36,8 @@ public sealed partial class LethalCompanyFearQuickMenuAdapter
     private readonly Button?[] _categoryButtons = new Button?[5];
     private static readonly string[] CategoryEnglish = { "All", "Monsters", "Scrap", "Items / tools", "Miniatures" };
     private static readonly string[] CategoryChinese = { "全部", "怪物", "废料", "工具与物品", "大型模型" };
-    private static readonly string[] OptionTabsChinese = { "镜头", "模型", "界面与声音", "热键" };
-    private static readonly string[] OptionTabsEnglish = { "Camera", "Models", "UI / Audio", "Hotkeys" };
+    private static readonly string[] OptionTabsChinese = { "镜头", "模型", "界面与声音", "热键", "分屏" };
+    private static readonly string[] OptionTabsEnglish = { "Camera", "Models", "UI / Audio", "Hotkeys", "Split-screen" };
 
     private void BuildOptions(RectTransform panel, Button? template, TextMeshProUGUI? textTemplate)
     {
@@ -47,7 +54,7 @@ public sealed partial class LethalCompanyFearQuickMenuAdapter
         {
             int tab = index;
             var button = CreateButton("Options Page " + index, _optionsRoot.transform, template, out var obj);
-            SetTopLeft((RectTransform)obj.transform, 16f + index * 124f, 48f, 116f, 32f);
+            SetTopLeft((RectTransform)obj.transform, 16f + index * 99f, 48f, 92f, 32f);
             _optionTabLabels[index] = CreateButtonText(obj.transform, textTemplate, string.Empty, 13f);
             _optionTabs[index] = button;
             button.onClick.AddListener(() => { CancelHotkeyCapture(); _optionsPage = tab; _optionsSheet = 0; });
@@ -76,12 +83,13 @@ public sealed partial class LethalCompanyFearQuickMenuAdapter
         SetTopLeft((RectTransform)_nextPageButton!.transform, 306f, 416f, 62f, 26f);
         SetTopLeft(_pageText!.rectTransform, 220f, 416f, 80f, 26f);
 
-        int[] pageRows = { 0, 0, 0, 0 };
+        int[] pageRows = { 0, 0, 0, 0, 0 };
         for (int index = 0; index < SpectatorOptionsController.RowCount; index++)
         {
             int row = index;
             int page = SpectatorOptionsController.PageForRow(row);
-            float top = (page == 0 ? 94f : 140f) + (pageRows[page]++ % SpectatorOptionsController.RowsPerSheet(page)) * (page == 0 ? 34f : 36f);
+            bool compact = page == 0 || page == 4;
+            float top = (compact ? 94f : 140f) + (pageRows[page]++ % SpectatorOptionsController.RowsPerSheet(page)) * (compact ? 34f : 36f);
             float rowHeight = 32f;
             var rowObject = CreateRectObject("Option Row " + row, _optionsRoot.transform);
             SetTopLeft((RectTransform)rowObject.transform, 16f, top, 488f, rowHeight);
@@ -102,11 +110,13 @@ public sealed partial class LethalCompanyFearQuickMenuAdapter
                 continue;
             }
             var minus = CreateButton("Decrease " + row, rowObject.transform, template, out var minusObj);
+            _optionMinus[row] = minus;
             SetTopLeft((RectTransform)minusObj.transform, 392f, 0f, 42f, rowHeight);
             if (SpectatorOptionsController.IsSelector(row)) CreatePageGlyph(minusObj.transform, false);
             else CreateStepGlyph(minusObj.transform, positive: false);
             minus.onClick.AddListener(() => _options.Adjust(row, -1));
             var plus = CreateButton("Increase " + row, rowObject.transform, template, out var plusObj);
+            _optionPlus[row] = plus;
             SetTopLeft((RectTransform)plusObj.transform, 446f, 0f, 42f, rowHeight);
             if (SpectatorOptionsController.IsSelector(row)) CreatePageGlyph(plusObj.transform, true);
             else CreateStepGlyph(plusObj.transform, positive: true);
@@ -116,10 +126,10 @@ public sealed partial class LethalCompanyFearQuickMenuAdapter
         SetTopLeft((RectTransform)_optionsPager.transform, 310, 378, 194, 28);
         var previousSheet = CreateButton("Previous sheet", _optionsPager.transform, template, out var previousSheetObj);
         SetTopLeft((RectTransform)previousSheetObj.transform, 0, 0, 40, 28); CreatePageGlyph(previousSheetObj.transform, false);
-        previousSheet.onClick.AddListener(() => _optionsSheet = (_optionsSheet - 1 + SpectatorOptionsController.SheetCount(_optionsPage)) % SpectatorOptionsController.SheetCount(_optionsPage));
+        previousSheet.onClick.AddListener(() => _optionsSheet = (_optionsSheet - 1 + SheetCount) % SheetCount);
         var nextSheet = CreateButton("Next sheet", _optionsPager.transform, template, out var nextSheetObj);
         SetTopLeft((RectTransform)nextSheetObj.transform, 154, 0, 40, 28); CreatePageGlyph(nextSheetObj.transform, true);
-        nextSheet.onClick.AddListener(() => _optionsSheet = (_optionsSheet + 1) % SpectatorOptionsController.SheetCount(_optionsPage));
+        nextSheet.onClick.AddListener(() => _optionsSheet = (_optionsSheet + 1) % SheetCount);
         _optionsPageLabel = CreateText("Sheet number", _optionsPager.transform, textTemplate, 13, TextAlignmentOptions.Center);
         SetTopLeft(_optionsPageLabel.rectTransform, 44, 0, 106, 28);
         BuildHotkeys(_optionsRoot.transform, template, textTemplate);
@@ -130,9 +140,14 @@ public sealed partial class LethalCompanyFearQuickMenuAdapter
         {
             CancelHotkeyCapture();
             if (_optionsPage == 3) _options.Hotkeys.Reset();
+            else if (_optionsPage == 4) _options.ResetSplitScreen();
             else _options.ResetDefaults(_optionsIsHost);
             _resetFeedbackUntil = Time.unscaledTime + 2f;
         });
+        _changedOnlyButton = CreateButton("Changed only", _optionsRoot.transform, template, out var changedObj);
+        SetTopLeft((RectTransform)changedObj.transform, 16f, 416f, 200f, 26f);
+        _changedOnlyText = CreateButtonText(changedObj.transform, textTemplate, string.Empty, 12f);
+        _changedOnlyButton.onClick.AddListener(() => { _changedOnly = !_changedOnly; _optionsSheet = 0; });
         var optionsButton = CreateButton("Options Toggle", panel, template, out var optionsObj);
         SetTopLeft((RectTransform)optionsObj.transform, 390f, 416f, 114f, 26f);
         _optionsButtonText = CreateButtonText(optionsObj.transform, textTemplate, string.Empty, 13f);
@@ -152,8 +167,17 @@ public sealed partial class LethalCompanyFearQuickMenuAdapter
         SetActive(_hostButton, _optionsPage == 1);
         SetActive(_renderButton, _optionsPage == 1);
         SetActive(_voiceMuteButton, _optionsPage == 2);
-        _optionsPager?.SetActive(_optionsPage != 3 && SpectatorOptionsController.SheetCount(_optionsPage) > 1);
-        SetText(_optionsPageLabel, $"{_optionsSheet + 1} / {SpectatorOptionsController.SheetCount(_optionsPage)}");
+        _options.CopyPageRows(_optionsPage, _changedOnly, _pageRows);
+        // Nothing changed on this page: show everything rather than an empty page.
+        bool noneChanged = _changedOnly && _pageRows.Count == 0;
+        if (noneChanged) _options.CopyPageRows(_optionsPage, false, _pageRows);
+        if (_optionsSheet >= SheetCount) _optionsSheet = SheetCount - 1;
+        _optionsPager?.SetActive(_optionsPage != 3 && SheetCount > 1);
+        SetText(_optionsPageLabel, $"{_optionsSheet + 1} / {SheetCount}");
+        SetActive(_changedOnlyButton, _optionsPage != 3);
+        SetText(_changedOnlyText, state.UseChineseText ? (noneChanged ? "本页没有改动" : _changedOnly ? "仅显示已改动：开" : "仅显示已改动：关")
+            : (noneChanged ? "No changes on this page" : _changedOnly ? "Changed only: on" : "Changed only: off"));
+        SetButtonHighlighted(_changedOnlyButton, _changedOnly);
         RenderHotkeys(state.UseChineseText, _optionsOpen && _optionsPage == 3);
         string[] tabs = state.UseChineseText ? OptionTabsChinese : OptionTabsEnglish;
         for (int index = 0; index < _optionTabs.Length; index++)
@@ -170,10 +194,21 @@ public sealed partial class LethalCompanyFearQuickMenuAdapter
         if (_optionsOpen)
             for (int index = 0; index < _optionLabels.Length; index++)
             {
-                _optionRows[index]?.SetActive(SpectatorOptionsController.PageForRow(index) == _optionsPage && SpectatorOptionsController.Ordinal(index) / SpectatorOptionsController.RowsPerSheet(_optionsPage) == _optionsSheet);
+            {
+                int slot = _pageRows.IndexOf(index), perSheet = SpectatorOptionsController.RowsPerSheet(_optionsPage);
+                bool shown = slot >= 0 && slot / perSheet == _optionsSheet;
+                _optionRows[index]?.SetActive(shown);
+                if (shown)
+                {
+                    bool compact = _optionsPage == 0 || _optionsPage == 4;
+                    SetTopLeft((RectTransform)_optionRows[index]!.transform, 16f, (compact ? 94f : 140f) + slot % perSheet * (compact ? 34f : 36f), 488f, 32f);
+                }
                 SetText(_optionLabels[index], _options.Describe(index, state.UseChineseText));
+                if (_optionMinus[index] != null) _optionMinus[index]!.interactable = _options.CanAdjustSplitScreen(index);
+                if (_optionPlus[index] != null) _optionPlus[index]!.interactable = _options.CanAdjustSplitScreen(index);
                 if (_toggleLabels[index] != null) SetText(_toggleLabels[index], _options.ToggleActionLabel(index, state.UseChineseText));
                 if (_optionToggles[index] != null) SetButtonHighlighted(_optionToggles[index], _options.ToggleValue(index));
+            }
             }
         if (_panelObject != null && _root != null)
         {

@@ -6,7 +6,7 @@ New-Item -ItemType Directory -Force -Path "$project/Assets/Editor","$project/Pac
 Copy-Item -LiteralPath "$PSScriptRoot/ThermalComposite.shader","$PSScriptRoot/ThermalSurface.shader","$repo/tools/native-fade/NativeFadeGpuTest.shader" -Destination "$project/Assets"
 Copy-Item -LiteralPath "$PSScriptRoot/ThermalArchitectureTest.shader" -Destination "$project/Assets"
 Copy-Item -LiteralPath "$PSScriptRoot/ThermalBuild.cs" -Destination "$project/Assets/Editor"
-Copy-Item -LiteralPath "$repo/src/EnhancedSpectator/GameInterop/NativeFadeBuffers.cs" -Destination "$project/Assets/Editor"
+Copy-Item -LiteralPath "$repo/src/EnhancedSpectator/GameInterop/NativeFadeBuffers.cs","$repo/src/EnhancedSpectator/GameInterop/SpectatorThermalGlow.cs" -Destination "$project/Assets/Editor"
 Set-Content -LiteralPath "$project/Packages/manifest.json" -Value '{"dependencies":{"com.unity.modules.assetbundle":"1.0.0"}}' -Encoding utf8
 Set-Content -LiteralPath "$project/ProjectSettings/ProjectVersion.txt" -Value 'm_EditorVersion: 2022.3.62f2' -Encoding utf8
 if(Test-Path -LiteralPath "$project/gpu-results.json") { Remove-Item -LiteralPath "$project/gpu-results.json" }

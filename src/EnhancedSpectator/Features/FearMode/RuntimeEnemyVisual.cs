@@ -321,6 +321,9 @@ public sealed partial class RuntimeEnemyVisual : IDisposable
         return hasBounds && bounds.extents.sqrMagnitude > 0.000001f;
     }
 
+    /// <summary>The Unity layer the visual renders on.</summary>
+    public int Layer => _root.layer;
+
     /// <summary>Applies a Unity layer to the clean hierarchy.</summary>
     public void SetLayer(int layer)
     {
@@ -612,6 +615,7 @@ public sealed partial class RuntimeEnemyVisual : IDisposable
                 _hasPose = _hasNetworkSample = _hasNetworkSampleVelocity = _hasMotionReference = false;
                 _positionVelocity = Vector3.zero;
             }
+            else SnapFade();
             _root.SetActive(visible);
         }
     }

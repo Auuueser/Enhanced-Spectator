@@ -22,7 +22,7 @@ public sealed partial class LethalCompanySpectatorAdapter : IGameFollowSupportAd
     {
         get
         {
-            var target=GetLocalPlayer()?.spectatedPlayerScript;
+            var target=ViewTarget;
             if(target==null) return false;
             if(target.IsOwner && target.thisController!=null) return target.thisController.isGrounded;
             // A remote CharacterController is not moved locally. Sample the actual
@@ -32,11 +32,11 @@ public sealed partial class LethalCompanySpectatorAdapter : IGameFollowSupportAd
         }
     }
     bool IGameMonitorSubjectPostureAdapter.IsMonitorSubjectCrouching
-        => GetLocalPlayer()?.spectatedPlayerScript is { } target && target.isCrouching;
+        => ViewTarget is { } target && target.isCrouching;
     bool IGameMonitorSubjectMotionAdapter.TryGetMonitorSubjectFocus(out Vector3 focus)
     {
         focus=default;
-        var target=GetLocalPlayer()?.spectatedPlayerScript;
+        var target=ViewTarget;
         if(target==null || target.isPlayerDead || !target.isInsideFactory) return false;
         focus=target.transform.position+Vector3.up*1.05f;
         return true;
@@ -44,7 +44,7 @@ public sealed partial class LethalCompanySpectatorAdapter : IGameFollowSupportAd
     bool IGameMonitorSubjectHeadingAdapter.TryGetMonitorSubjectHeading(out Vector3 heading)
     {
         heading=default;
-        var target=GetLocalPlayer()?.spectatedPlayerScript;
+        var target=ViewTarget;
         if(target==null || target.isPlayerDead || !target.isInsideFactory) return false;
         heading=Vector3.ProjectOnPlane(target.transform.forward,Vector3.up);
         return heading.sqrMagnitude>.001f;
@@ -52,14 +52,14 @@ public sealed partial class LethalCompanySpectatorAdapter : IGameFollowSupportAd
     bool IGameMonitorGroundReferenceAdapter.TryGetMonitorGroundReference(Vector3 camera,float expectedHeight,out float height)
     {
         height=0;
-        var target=GetLocalPlayer()?.spectatedPlayerScript;
+        var target=ViewTarget;
         if(target==null || target.isPlayerDead || !target.isInsideFactory) return false;
         return LethalCompanyFollowSupport.TryGetGroundReference(camera,expectedHeight,target.walkableSurfacesNoPlayersMask,out height);
     }
     private bool TryGetIndoorEntrance(bool mainOnly,out Vector3 point,out Vector3 axis)
     {
         point=axis=default;
-        var target=GetLocalPlayer()?.spectatedPlayerScript;
+        var target=ViewTarget;
         var runtime=RoundManager.Instance!=null ? RoundManager.Instance.dungeonGenerator : null;
         var dungeon=runtime!=null ? runtime.Generator.CurrentDungeon : null;
         if(target==null || !target.isInsideFactory || target.isPlayerDead || dungeon==null) return false;
@@ -84,7 +84,7 @@ public sealed partial class LethalCompanySpectatorAdapter : IGameFollowSupportAd
     bool IGameMonitorEntranceAdapter.TryGetMonitorElevatorApproach(out Bounds cabin)
     {
         cabin=default;
-        var target=GetLocalPlayer()?.spectatedPlayerScript;
+        var target=ViewTarget;
         var lift=RoundManager.Instance!=null ? RoundManager.Instance.currentMineshaftElevator : null;
         if(target==null || !target.isInsideFactory || target.isPlayerDead || lift==null || !lift.isActiveAndEnabled || lift.elevatorPoint==null
             || !_monitorElevatorGeometry.Resolve(lift.elevatorPoint,out cabin,out _)) return false;
@@ -101,7 +101,7 @@ public sealed partial class LethalCompanySpectatorAdapter : IGameFollowSupportAd
     bool IGameMonitorSupportAdapter.TryGetMonitorSupport(out MonitorSupport support)
     {
         support=default;
-        var target=GetLocalPlayer()?.spectatedPlayerScript;
+        var target=ViewTarget;
         if(target==null || !target.isInsideFactory || target.isPlayerDead) return false;
         bool sampled=LethalCompanyFollowSupport.TryGetMonitorSupport(target.transform.position,target.walkableSurfacesNoPlayersMask,out support);
         // Confirmed V81 fields; read only. Motion detection remains available for other moving platforms.
@@ -115,7 +115,7 @@ public sealed partial class LethalCompanySpectatorAdapter : IGameFollowSupportAd
     bool IGameFollowSupportAdapter.TryGetFollowSupport(out float height, out Transform? surface)
     {
         height=0; surface=null;
-        var target=GetLocalPlayer()?.spectatedPlayerScript;
+        var target=ViewTarget;
         if(target==null) return false;
         return LethalCompanyFollowSupport.TryGetHeight(target.transform.position, target.walkableSurfacesNoPlayersMask, out height, out surface);
     }

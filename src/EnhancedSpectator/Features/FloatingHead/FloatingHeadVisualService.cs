@@ -26,6 +26,9 @@ public sealed class FloatingHeadVisualService : IDisposable
     private readonly PlaceholderHeadVisualFactory _visualFactory;
     private readonly IFearVisualOverrideState? _fearVisualOverrides;
     private readonly RemoteSpectatorPosePresentationService? _posePresentationService;
+    // An emote from a spectator whose model has not been made (hidden since they died, before ever showing): it
+    // reveals the model like speech does, and shows on it once the model is made.
+    private readonly Dictionary<ulong, (string Text, float At)> _pendingEmotes = new();
     private readonly Dictionary<ulong, FloatingHeadVisual> _visuals =
         new Dictionary<ulong, FloatingHeadVisual>();
     private readonly HashSet<ulong> _activeSpectatorIds = new HashSet<ulong>();
@@ -80,6 +83,7 @@ public sealed class FloatingHeadVisualService : IDisposable
         _fearVisualOverrides = fearVisualOverrides;
         _posePresentationService = posePresentationService;
         _config.Camera.FadeModelsNearby.SettingChanged += OnFadePreferenceChanged;
+        Social.SpectatorSocialEvents.Emote += OnEmote;
         _config.Camera.FadeModelsWhileSpectating.SettingChanged += OnFadePreferenceChanged;
     }
 
@@ -110,6 +114,7 @@ public sealed class FloatingHeadVisualService : IDisposable
             }
 
             TickCore(renderingCamera: null, poseSource: "LateUpdate", logPose: _config.DebugVisualLifecycle.Value);
+            UpdateWatcherCards();
         }
         catch (Exception ex)
         {
@@ -124,7 +129,16 @@ public sealed class FloatingHeadVisualService : IDisposable
     /// </summary>
     public void CameraPreCullTick(Camera camera)
     {
-        if (_disposed || _disabledDueToError || !IsRenderableGameCamera(camera)
+        if (_disposed || _disabledDueToError) return;
+        // Every split-screen view, the large one included, turns the name tags and emotes toward itself before
+        // drawing; a tag facing another camera (or the head's own direction) is seen from the side, squashed.
+        // The large view is drawn manually by a disabled camera, so the ownership path below may skip it.
+        if (SplitScreenCameraContext.IsView(camera))
+        {
+            foreach (FloatingHeadVisual visual in _visuals.Values) visual.FaceNameTag(camera);
+            if (camera != LethalCompanyFearViewCamera.ActiveView) return;
+        }
+        if (!IsRenderableGameCamera(camera)
             || !FloatingHeadCameraOwnership.CanUpdate(camera, LethalCompanyFearViewCamera.ActiveView!))
         {
             return;
@@ -197,8 +211,10 @@ public sealed class FloatingHeadVisualService : IDisposable
         }
 
         DestroyAll("dispose");
+        _watcherCards.Dispose();
         _config.Camera.FadeModelsNearby.SettingChanged -= OnFadePreferenceChanged;
         _config.Camera.FadeModelsWhileSpectating.SettingChanged -= OnFadePreferenceChanged;
+        Social.SpectatorSocialEvents.Emote -= OnEmote;
         if (_screenMarkerTexture != null)
         {
             UnityEngine.Object.Destroy(_screenMarkerTexture);
@@ -325,7 +341,7 @@ public sealed class FloatingHeadVisualService : IDisposable
         foreach (RemoteSpectatorInfo spectator in spectators)
         {
             _activeSpectatorIds.Add(spectator.SpectatorClientId);
-            if (spectator.PoseState?.ModelStowed == true || LethalCompanyModelVisibility.ShouldHideAutoCentering(spectator))
+            if (LethalCompanyModelVisibility.Stowed(spectator) || LethalCompanyModelVisibility.CenteringOpacity(spectator) <= 0)
             {
                 if (_visuals.TryGetValue(spectator.SpectatorClientId, out var stowed)) stowed.SetVisible(false);
                 continue;
@@ -377,6 +393,11 @@ public sealed class FloatingHeadVisualService : IDisposable
                 }
 
                 _visuals[spectator.SpectatorClientId] = visual;
+                if (_pendingEmotes.TryGetValue(spectator.SpectatorClientId, out var pending))
+                {
+                    _pendingEmotes.Remove(spectator.SpectatorClientId);
+                    if (Time.unscaledTime - pending.At < EmoteBubbleVisual.Seconds) visual.ShowEmote(pending.Text, EmoteSize);
+                }
                 visual.SetPrimaryRendererVisible(!fearOverrideActive);
                 _visualSkipLoggedSpectators.Remove(spectator.SpectatorClientId);
                 LogDebug(
@@ -396,6 +417,7 @@ public sealed class FloatingHeadVisualService : IDisposable
         foreach (ulong spectatorClientId in _staleVisualIds)
         {
             RemoveVisual(spectatorClientId, "presence lost");
+            LethalCompanyModelVisibility.ForgetCentering(spectatorClientId);
         }
 
         _staleVisualIds.Clear();
@@ -413,7 +435,10 @@ public sealed class FloatingHeadVisualService : IDisposable
         for (int index = 0; index < visualCount; index++)
         {
             RemoteSpectatorInfo spectator = spectators[index];
-            if (spectator.PoseState?.ModelStowed == true || LethalCompanyModelVisibility.ShouldHideAutoCentering(spectator))
+            float centering = updateDynamicState
+                ? LethalCompanyModelVisibility.UpdateCenteringOpacity(spectator, IsCenteringSpeaker(spectator), Time.unscaledDeltaTime)
+                : LethalCompanyModelVisibility.CenteringOpacity(spectator);
+            if (LethalCompanyModelVisibility.Stowed(spectator) || centering <= 0)
             {
                 if (_visuals.TryGetValue(spectator.SpectatorClientId, out var hidden)) hidden.SetVisible(false);
                 continue;
@@ -433,8 +458,14 @@ public sealed class FloatingHeadVisualService : IDisposable
                 ? CalculateVisualScale(spectator, visual)
                 : visual.CurrentScale;
             visual.FadeNearby = LethalCompanyFearViewCamera.ShouldFade(_config.Camera);
+            visual.OpacityCap = centering;
             if (renderingCamera == null) visual.PrepareCameraFade();
+            // Appearing translucent (revealed by speech or an emote, fading in as the camera moves, or near the watched
+            // player) before its fade is set up would draw the model fully opaque for those frames, the first time in
+            // a game: it appears once the fade can draw it.
+            if ((visual.OpacityCap < .999f || visual.FadeNearby) && visual.FadePending) continue;
             visual.SetWatchedTarget(spectator.PoseState?.TargetClientId, spectator.PoseState?.TargetPlayerSlotId);
+            visual.SetParty(spectator.SpectatorClientId, _posePresentationService?.Parties?.FormationLeader(spectator.SpectatorClientId));
             if (updateDynamicState)
             {
                 UpdateNameTagText(spectator, visual);
@@ -473,6 +504,7 @@ public sealed class FloatingHeadVisualService : IDisposable
                     hasFearTop ? fearTopOffset : 0f);
 
                 visual.UpdateNameTag(renderingCamera, nameTagHeight);
+                visual.UpdateNameFade();
                 if (logPose)
                 {
                     LogFirstRemotePose(
@@ -516,6 +548,34 @@ public sealed class FloatingHeadVisualService : IDisposable
         }
     }
 
+    // A living player is told who of the spectators watching through their eyes (first person: no ghost to see) speaks.
+    private readonly LethalCompanyWatcherCards _watcherCards = new LethalCompanyWatcherCards();
+    private readonly List<(ulong ClientId, string Name, ulong SteamId)> _watchersSpeaking = new List<(ulong, string, ulong)>();
+    private void UpdateWatcherCards()
+    {
+        _watchersSpeaking.Clear();
+        foreach (var spectator in _presenceProvider.Current.RemoteSpectators)
+            if (spectator.IsWatchingLocalPlayer && spectator.PoseState?.FirstPersonView == true
+                && TryGetVoiceActivity(spectator, out VoiceActivityState voice) && voice.HasData && voice.IsSpeaking)
+                _watchersSpeaking.Add((spectator.SpectatorClientId, FormatNameTagText(spectator, out _), LethalCompanyWatcherCards.SteamIdOf(spectator.SpectatorClientId)));
+        _watcherCards.Update(_watchersSpeaking, _config.UseChineseText, Time.unscaledDeltaTime);
+    }
+
+    // Voice is only looked up for spectators the centering rule would hide. A showing emote counts as speaking.
+    private bool IsCenteringSpeaker(RemoteSpectatorInfo spectator)
+        => (_config.Camera.RevealSpeakingCenteringModels.Value || LethalCompanyModelVisibility.InFormation(spectator))
+            && LethalCompanyModelVisibility.ShouldHideAutoCentering(spectator)
+            && ((_visuals.TryGetValue(spectator.SpectatorClientId, out FloatingHeadVisual visual) ? visual.EmoteActive
+                    : _pendingEmotes.TryGetValue(spectator.SpectatorClientId, out var pending) && Time.unscaledTime - pending.At < EmoteBubbleVisual.Seconds)
+                || TryGetVoiceActivity(spectator, out VoiceActivityState voice) && voice.HasData && voice.IsSpeaking);
+
+    private float EmoteSize => Mathf.Max(.005f, _config.NameTagScale.Value * 1.35f);
+    private void OnEmote(ulong sender, string text)
+    {
+        if (_visuals.TryGetValue(sender, out FloatingHeadVisual visual)) visual.ShowEmote(text, EmoteSize);
+        else _pendingEmotes[sender] = (text, Time.unscaledTime);
+    }
+
     private float CalculateVisualScale(RemoteSpectatorInfo spectator, FloatingHeadVisual visual)
     {
         float targetVoiceLevel = 0f;
@@ -526,6 +586,8 @@ public sealed class FloatingHeadVisualService : IDisposable
             voiceState.Amplitude,
             _config.MinimumSpeakingVoiceLevel.Value);
 
+        // The same voice threshold drives the speaker icon after the name.
+        visual.SetSpeaking(targetVoiceLevel > 0);
         float voiceLevel = visual.UpdateVoiceLevel(
             targetVoiceLevel,
             Mathf.Max(0f, _config.VoiceAttackSmoothTime.Value),
@@ -1211,7 +1273,7 @@ public sealed class FloatingHeadVisualService : IDisposable
             && TryGetSyncedDisplayName(spectator.SpectatorClientId, out string syncedDisplayName))
         {
             canCache = true;
-            return syncedDisplayName;
+            return PlayerNameText.Clean(syncedDisplayName);
         }
 
         if (_config.NameTagUseGamePlayerNames.Value
@@ -1222,7 +1284,7 @@ public sealed class FloatingHeadVisualService : IDisposable
             && !string.IsNullOrWhiteSpace(displayName))
         {
             canCache = false;
-            return displayName.Trim();
+            return PlayerNameText.Clean(displayName);
         }
 
         if (_config.NameTagUseFallbackIds.Value)

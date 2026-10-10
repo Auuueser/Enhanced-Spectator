@@ -1239,7 +1239,7 @@ public sealed class EnhancedSpectatorConfig
             "Logging",
             "EnableDebugLogging",
             false,
-            "Enables runtime diagnostics (models, fade, camera, audio and network). Live changes apply immediately; up to 20 messages/second. Off keeps startup and rate-limited faults. 运行诊断总开关，即时生效；默认关闭，仅保留启动信息和限频故障日志。");
+            "Enables runtime diagnostics (models, fade, camera, audio, network, split-screen timing and the developer catalog export). Live changes apply immediately; up to 20 messages/second. Off keeps startup and rate-limited faults. 运行诊断总开关（模型、渐隐、镜头、音频、网络、分屏耗时与开发用目录导出），即时生效；默认关闭，仅保留启动信息和限频故障日志。");
 
         ConfigEntry<bool> enableNetworking = config.Bind(
             "Networking",
@@ -1323,7 +1323,7 @@ public sealed class EnhancedSpectatorConfig
             "VoiceRouting",
             "SpectatorVoiceUseRemotePosePosition",
             true,
-            "Positions routed spectator voice at the synced spectator camera pose when available. Disable to force safer 2D local playback.");
+            "Positions routed spectator voice at the synced spectator camera pose when available. Disable for 2D single-view playback. Split-screen watchers always use positional playback.");
 
         ConfigEntry<bool> spectatorVoiceEnableDistanceAttenuation = config.Bind(
             "VoiceRouting",
@@ -1359,7 +1359,7 @@ public sealed class EnhancedSpectatorConfig
             "VoiceRouting",
             "SpectatorVoiceFallbackTo2DWhenPoseMissing",
             false,
-            "Falls back to 2D routed spectator voice when synced pose data is temporarily unavailable instead of dropping voice entirely. Disabled by default so relayed listeners do not hear stale global voice when pose sync is missing.");
+            "Falls back to 2D single-view spectator voice when synced pose data is temporarily unavailable. Disabled by default. Split-screen watchers stay muted until positional playback is available.");
 
         ConfigEntry<bool> debugSpectatorVoiceRouting = config.Bind(
             "VoiceRouting",

@@ -121,12 +121,12 @@ public sealed class SpectatorInputService
     }
 
     /// <summary>
-    /// Reads mouse look delta from Unity Input System.
+    /// Reads camera look from Unity Input System. A visible interface cursor never turns the view.
     /// </summary>
     public Vector2 ReadLookDelta()
     {
         Mouse? mouse = Mouse.current;
-        return mouse == null ? Vector2.zero : mouse.delta.ReadValue() * MouseDeltaScale;
+        return mouse == null || Cursor.visible ? Vector2.zero : mouse.delta.ReadValue() * MouseDeltaScale;
     }
 
     /// <summary>Reads the current mouse-wheel delta.</summary>
@@ -134,6 +134,20 @@ public sealed class SpectatorInputService
     {
         Mouse? mouse = Mouse.current;
         return mouse == null ? 0f : mouse.scroll.ReadValue().y / 120f;
+    }
+
+    /// <summary>Mouse activity that operates the spectator view, excluding keyboard push-to-talk.</summary>
+    internal bool HasCameraMouseActivity => !Cursor.visible && (ReadLookDelta().sqrMagnitude > .0001f
+        || !Mathf.Approximately(ReadScrollDelta(), 0f) || AnyMouseButtonPressed());
+
+    /// <summary>Any key or mouse button went down this frame.</summary>
+    public static bool AnyKeyOrButtonPressed() => Keyboard.current?.anyKey.wasPressedThisFrame == true || AnyMouseButtonPressed();
+
+    /// <summary>Any mouse button went down this frame.</summary>
+    public static bool AnyMouseButtonPressed()
+    {
+        var mouse = Mouse.current;
+        return mouse != null && (mouse.leftButton.wasPressedThisFrame || mouse.rightButton.wasPressedThisFrame || mouse.middleButton.wasPressedThisFrame);
     }
 
     /// <summary>

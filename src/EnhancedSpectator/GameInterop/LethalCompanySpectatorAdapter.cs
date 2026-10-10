@@ -12,28 +12,44 @@ public sealed partial class LethalCompanySpectatorAdapter :
     IGameSpectatorAdapter,
     IGameShipMotionStateAdapter,
     IGameSpectatedTargetMotionReferenceAdapter,
-    IGameSpectatorCameraAdapter
+    IGameSpectatorCameraAdapter,
+    IGameSpectatorModeInputAdapter
 {
+    private PlayerControllerB? _viewTarget;
+    private Camera? _viewCamera;
+    private bool _boundView;
+    internal PlayerControllerB? ViewTarget => _boundView ? _viewTarget : GetLocalPlayer()?.spectatedPlayerScript;
+    internal Camera? ViewCamera => _boundView ? _viewCamera : StartOfRound.Instance?.spectateCamera;
+
+    internal void BindView(PlayerControllerB target, Camera camera)
+    {
+        _boundView = true;
+        _viewTarget = target;
+        _viewCamera = camera;
+    }
+
+    internal static Transform ViewAnchor(PlayerControllerB target) => ResolveAnchor(target) ?? target.transform;
+
     /// <inheritdoc />
     public bool TryGetTargetEyePose(out Vector3 position, out Quaternion rotation)
     {
         position = default;
         rotation = Quaternion.identity;
-        var target = GetLocalPlayer()?.spectatedPlayerScript;
+        var target = ViewTarget;
         if (target == null || target.isPlayerDead || !target.isPlayerControlled || target.gameplayCamera == null) return false;
         position = target.gameplayCamera.transform.position;
         rotation = LethalCompanyFirstPersonPose.Rotation(target);
         return true;
     }
 
-    /// <inheritdoc />
-    public bool IsCameraInputBlocked()
-        => SpectatorPointerCapture.IsActive || IsUiInputBlocked();
+    internal bool IsUiInputBlocked() => IsLocalQuickMenuOpen() || IsTypingBlocked();
 
-    internal bool IsUiInputBlocked()
+    /// <summary>Keys belong to text entry: the window is unfocused, the chat is open or an input field is selected.</summary>
+    internal bool IsTypingBlocked()
     {
+        if (!Application.isFocused) return true;
         var local = GetLocalPlayer();
-        if (IsLocalQuickMenuOpen() || (local != null && local.isTypingChat)) return true;
+        if (local != null && local.isTypingChat) return true;
         var selected = UnityEngine.EventSystems.EventSystem.current?.currentSelectedGameObject;
         return selected != null && (selected.GetComponent<TMPro.TMP_InputField>() != null
             || selected.GetComponent<UnityEngine.UI.InputField>() != null);

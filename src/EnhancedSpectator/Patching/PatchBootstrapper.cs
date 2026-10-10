@@ -14,6 +14,7 @@ public sealed class PatchBootstrapper : IDisposable
     private readonly List<IPatchModule> _modules = new List<IPatchModule>
     {
         new SpectatorLifecyclePatchModule(),
+        new SpectatePreviousPlayerCompatPatchModule(),
     };
 
     private bool _registered;

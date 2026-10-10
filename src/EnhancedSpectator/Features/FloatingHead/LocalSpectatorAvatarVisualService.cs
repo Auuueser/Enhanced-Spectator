@@ -44,6 +44,14 @@ public sealed class LocalSpectatorAvatarVisualService : IDisposable
         _detachedHeadVisualSourceAdapter = detachedHeadVisualSourceAdapter;
         _config.Camera.FadeModelsNearby.SettingChanged += OnFadePreferenceChanged;
         _config.Camera.FadeModelsWhileSpectating.SettingChanged += OnFadePreferenceChanged;
+        Social.SpectatorSocialEvents.Emote += OnEmote;
+    }
+
+    // Your own emotes above your own ghost in third person (a fear model shows them itself).
+    private void OnEmote(ulong sender, string text)
+    {
+        if (_visual != null && _gameAdapter.TryGetLocalPlayerIdentity(out ulong local, out _) && sender == local)
+            _visual.ShowEmote(text, Mathf.Max(.005f, _config.NameTagScale.Value * 1.35f));
     }
 
     private void OnFadePreferenceChanged(object sender, EventArgs args)
@@ -112,6 +120,7 @@ public sealed class LocalSpectatorAvatarVisualService : IDisposable
             _visual.FadeNearby = LethalCompanyFearViewCamera.ShouldFade(_config.Camera);
             _visual.PrepareCameraFade();
             _visual.SetWatchedTarget(state.TargetActualClientId, state.TargetSlotId);
+            _visual.UpdateEmote(_config.NameTagHeightOffset.Value);
         }
         catch (Exception ex)
         {
@@ -133,6 +142,7 @@ public sealed class LocalSpectatorAvatarVisualService : IDisposable
         _visualFactory.Dispose();
         _config.Camera.FadeModelsNearby.SettingChanged -= OnFadePreferenceChanged;
         _config.Camera.FadeModelsWhileSpectating.SettingChanged -= OnFadePreferenceChanged;
+        Social.SpectatorSocialEvents.Emote -= OnEmote;
         _disposed = true;
     }
 

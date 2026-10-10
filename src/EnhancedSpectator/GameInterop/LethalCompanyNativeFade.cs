@@ -22,6 +22,16 @@ internal sealed class LethalCompanyNativeFade : IDisposable
     internal int Frame => _request.Frame;
     internal float SortDistance { get; private set; }
     internal bool Ready => !_unsupported && _registered && NativeFadePass.CanTakeCamera(LethalCompanyFearViewCamera.ActiveView);
+    /// <summary>
+    /// The pass still setting up the view's camera, since this model was prepared or the view changed camera (the
+    /// first faded model makes the pass, which needs a frame there; a death changes the camera): a model that is to
+    /// appear translucent waits. Bounded, so a camera that cannot get ready leaves the model drawn as before.
+    /// </summary>
+    internal bool Pending => _registered && !_unsupported
+        && NativeFadePass.Preparing(LethalCompanyFearViewCamera.ActiveView, out int since)
+        && Time.frameCount - System.Math.Max(_registeredFrame, since) <= PendingFrames;
+    private const int PendingFrames = 10;
+    private int _registeredFrame = int.MinValue / 2;
     internal LethalCompanyNativeFade(Renderer[] renderers, string key)
     { _renderers = renderers; _scope = new NativeFadeRendererScope(renderers); Key = key; }
     internal void Prepare()
@@ -46,6 +56,7 @@ internal sealed class LethalCompanyNativeFade : IDisposable
             }
         }
         _registered = NativeFadePass.Register(this);
+        _registeredFrame = Time.frameCount;
         if (_registered)
             ModLog.Debug($"NativeFade model prepared: model={Key}, renderers={_renderers.Length}; original materials retained, waiting for camera readiness.");
         if (!_registered) _unsupported = true;

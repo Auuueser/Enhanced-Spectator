@@ -26,6 +26,8 @@ public sealed class SpectatorModule :
     private readonly SpectatorFreecamController _freecamController;
     private bool _initialized;
     private bool _lastPoseHadShipMotionReference;
+    private bool _centeringHeld, _untouchedSinceDeath, _wasDead;
+    private int _seenCameraMove = -1;
 
     /// <summary>
     /// Creates a spectator module with a game adapter and freecam settings.
@@ -82,7 +84,7 @@ public sealed class SpectatorModule :
                 true,
                 snapshot.IsLocalPlayerDead ? "Local spectator state is available." : "Local player is not spectating.",
                 snapshot.IsLocalPlayerDead,
-                _freecamController.State.IsActive);
+                _freecamController.State.IsActive && !_freecamController.IsPreview);
             return;
         }
 
@@ -117,13 +119,14 @@ public sealed class SpectatorModule :
     /// <inheritdoc />
     public bool TryGetCurrentSpectatorPose(out SpectatorPoseState state)
     {
-        if (_initialized
+        if (!_freecamController.IsPreview && _initialized
             && _snapshotCache.TryGetCurrentFrameSnapshot(out GameSpectatorSnapshot snapshot)
             && snapshot.HasRound
             && snapshot.HasLocalPlayer
             && snapshot.LocalPlayerSlotId.HasValue
             && snapshot.LocalPlayerActualClientId.HasValue)
         {
+            SpectatorSplitView splitView = SplitScreen.SplitScreenModule.LocalView;
             bool useFreecamPose = SpectatorPoseSourceRules.ShouldUseFreecamPose(
                 _freecamController.State.IsActive,
                 _freecamController.State.HasWorldPose);
@@ -136,18 +139,37 @@ public sealed class SpectatorModule :
                 snapshot.HasSpectatedTarget,
                 useFreecamPose,
                 useVanillaSpectatorPose);
+            // Poses are sampled less often than every frame: a camera movement since the last sample counts.
+            bool moved = _freecamController.CameraMovedFrame > _seenCameraMove;
+            _seenCameraMove = _freecamController.CameraMovedFrame;
+            // A spectating life starts centred (hidden from others), until the camera is first moved.
+            if (snapshot.IsLocalPlayerDead && !_wasDead) _centeringHeld = _untouchedSinceDeath = true;
+            _wasDead = snapshot.IsLocalPlayerDead;
+            _untouchedSinceDeath &= !moved;
+            // A moment without a pose (the watched player switching) keeps what was held.
+            if (hasPose)
+                _centeringHeld = SpectatorAutoCenter.HoldCentering(_centeringHeld,
+                    useFreecamPose ? _freecamController.IsAutoCentering : useVanillaSpectatorPose && _freecamController.IsVanillaIdle,
+                    splitView != SpectatorSplitView.None || _untouchedSinceDeath, moved);
             Vector3 position = Vector3.zero;
             Quaternion rotation = Quaternion.identity;
+            Vector3 cameraPosition = Vector3.zero;
+            Quaternion cameraRotation = Quaternion.identity;
+            float cameraFov = 0;
             if (hasPose && useFreecamPose)
             {
                 position = _freecamController.State.WorldPosition;
                 rotation = _freecamController.State.RepresentationRotation;
+                cameraPosition = _freecamController.State.RenderedWorldPosition;
+                cameraRotation = _freecamController.State.RenderedWorldRotation;
+                cameraFov = _freecamController.State.RenderedFieldOfView;
             }
             else if (hasPose && snapshot.SpectateCamera != null)
             {
                 Transform cameraTransform = snapshot.SpectateCamera.transform;
                 position = cameraTransform.position;
                 rotation = cameraTransform.rotation;
+                cameraPosition = position; cameraRotation = rotation; cameraFov = snapshot.SpectateCamera.fieldOfView;
             }
 
             bool isInsideShipBounds = hasPose
@@ -200,8 +222,22 @@ public sealed class SpectatorModule :
                 hasTargetMotionReference,
                 targetMotionReferenceLocalPosition,
                 targetMotionReferenceLocalRotation,
-                modelStowed: hasPose && useFreecamPose && _freecamController.State.ModelStowed,
-                autoCentering: hasPose && useFreecamPose && _freecamController.IsAutoCentering);
+                // In the split-screen audience (every view tiled) the model is stowed for older versions too.
+                modelStowed: hasPose && (useFreecamPose && _freecamController.State.ModelStowed || splitView == SpectatorSplitView.Audience),
+                // The vanilla spectate camera (normal spectating, split-screen tiles and the vanilla large view) keeps the
+                // game's view: its ghost stays visible like any other, and counts as centred (hidden, translucent while
+                // speaking) only once the player has left it alone for the idle wait. No turn or height is applied.
+                autoCentering: hasPose && _centeringHeld,
+                splitView: splitView,
+                followingClientId: SplitScreen.SplitScreenModule.LocalFollowing,
+                firstPersonView: hasPose && useFreecamPose && _freecamController.State.ModelStowed && _freecamController.State.Mode == SpectatorCameraMode.FirstPerson,
+                // The camera this pose comes through, for a follower watching together to take the same one.
+                cameraMode: hasPose && useFreecamPose ? (byte)(_freecamController.State.Mode + 1) : (byte)0,
+                cameraStyle: (byte)_freecamController.EffectiveMonitorStyle,
+                hasCameraPose: hasPose,
+                cameraLocalPosition: Quaternion.Inverse(rotation) * (cameraPosition - position),
+                cameraLocalRotation: Quaternion.Inverse(rotation) * cameraRotation,
+                cameraFieldOfView: cameraFov);
             return true;
         }
 
