@@ -19,8 +19,6 @@ internal sealed class SpectatorChatOverlay : IDisposable
     internal SpectatorChatOverlay()
     {
         _canvas = SplitScreenView.CreateCanvas("EnhancedSpectator Chat", 32003);
-        // It outlives a game's scenes, like the player it belongs to.
-        UnityEngine.Object.DontDestroyOnLoad(_canvas.gameObject);
         _panel = new SpectatorChatPanel(SpectatorDemoZoom.CreateRoot(_canvas.transform));
         _canvas.gameObject.SetActive(false);
     }

@@ -78,7 +78,7 @@ public sealed partial class SpectatorOptionsController
     {
         if (row == 44) return (chinese ? "热成像配色：" : "Thermal colours: ") + ThermalPalettes.Name(_config.Camera.ThermalPalette.Value, chinese);
         if (row == 45) return (chinese ? "热成像强度：" : "Thermal intensity: ") + $"{_config.Camera.ThermalStrength.Value:P0}";
-        if (row == 40) return (chinese ? "归位模型说话时半透明：" : "Show centering speakers translucent: ") + (chinese ? ToggleValue(row) ? "开启" : "关闭" : ToggleValue(row) ? "On" : "Off");
+        if (row == 40) return (chinese ? "闲置模型说话时半透明：" : "Show idle speakers translucent: ") + (chinese ? ToggleValue(row) ? "开启" : "关闭" : ToggleValue(row) ? "On" : "Off");
         if (row == 47) return (chinese ? "观众竞猜（房主决定）：" : "Audience bets (host decides): ") + (chinese ? ToggleValue(row) ? "开启" : "关闭" : ToggleValue(row) ? "On" : "Off");
         if (row >= 30) return DescribeSplitScreen(row, chinese);
         string[] labels = chinese
@@ -86,7 +86,7 @@ public sealed partial class SpectatorOptionsController
         if (row == 29) return (chinese ? "显示观战分布：" : "Show watch roster: ") + (chinese ? ToggleValue(row) ? "开启" : "关闭" : ToggleValue(row) ? "On" : "Off");
         if (row == 28) return (chinese ? "进入设施自动穿梭：" : "Auto travelling indoors: ") + (chinese ? ToggleValue(row)?"开启":"关闭" : ToggleValue(row)?"On":"Off");
         if (row == 27) return (chinese ? "红外热成像：" : "Thermal imaging: ") + (chinese ? ToggleValue(row)?"开启":"关闭" : ToggleValue(row)?"On":"Off");
-        if (row == 26) return (chinese ? "隐藏归位模型：" : "Hide centering models: ") + (chinese ? ToggleValue(row) ? "开启" : "关闭" : ToggleValue(row) ? "On" : "Off");
+        if (row == 26) return (chinese ? "隐藏闲置模型：" : "Hide idle models: ") + (chinese ? ToggleValue(row) ? "开启" : "关闭" : ToggleValue(row) ? "On" : "Off");
         if (row == 22 || row == 24)
             return (row == 22 ? (chinese ? "闲置自动归位" : "Recenter when idle") : (chinese ? "隐藏所有观战模型" : "Hide all spectator models")) + ": "
                 + (chinese ? ToggleValue(row) ? "开启" : "关闭" : ToggleValue(row) ? "On" : "Off");

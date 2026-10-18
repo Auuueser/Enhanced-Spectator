@@ -7,12 +7,22 @@ namespace EnhancedSpectator.Networking;
 /// </summary>
 public sealed class RemoteSpectatorPoseRegistry
 {
-    private readonly Dictionary<ulong, SpectatorPoseState> _poses = new Dictionary<ulong, SpectatorPoseState>();
+    private readonly Dictionary<ulong, (SpectatorPoseState Pose, double ReceivedAt)> _poses = new Dictionary<ulong, (SpectatorPoseState, double)>();
+
+    /// <summary>A watcher is currently following this peer's large view.</summary>
+    internal bool HasCameraFollower(ulong clientId)
+    {
+        foreach (var entry in _poses.Values)
+            if (entry.Pose.SplitView == SpectatorSplitView.Watching && entry.Pose.FollowingClientId == clientId) return true;
+        return false;
+    }
+
+    internal double ReceivedAt(ulong clientId) => _poses.TryGetValue(clientId, out var entry) ? entry.ReceivedAt : 0;
 
     /// <summary>
     /// Registers or updates a remote spectator pose.
     /// </summary>
-    public void Update(SpectatorPoseState state)
+    public void Update(SpectatorPoseState state, double receivedAt = 0)
     {
         if (!state.IsSpectating)
         {
@@ -20,7 +30,7 @@ public sealed class RemoteSpectatorPoseRegistry
             return;
         }
 
-        _poses[state.LocalClientId] = state;
+        _poses[state.LocalClientId] = (state, receivedAt);
     }
 
     /// <summary>
@@ -28,9 +38,9 @@ public sealed class RemoteSpectatorPoseRegistry
     /// </summary>
     public bool TryGet(ulong clientId, out SpectatorPoseState state)
     {
-        if (_poses.TryGetValue(clientId, out SpectatorPoseState storedState))
+        if (_poses.TryGetValue(clientId, out var stored))
         {
-            state = storedState;
+            state = stored.Pose;
             return true;
         }
 
@@ -44,9 +54,9 @@ public sealed class RemoteSpectatorPoseRegistry
     public List<SpectatorPoseState> GetSnapshot()
     {
         List<SpectatorPoseState> snapshot = new List<SpectatorPoseState>();
-        foreach (SpectatorPoseState state in _poses.Values)
+        foreach (var entry in _poses.Values)
         {
-            snapshot.Add(state);
+            snapshot.Add(entry.Pose);
         }
 
         return snapshot;

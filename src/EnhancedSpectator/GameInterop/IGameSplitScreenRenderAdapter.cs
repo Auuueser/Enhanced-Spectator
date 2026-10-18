@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using EnhancedSpectator.Features.Spectator;
 using EnhancedSpectator.Features.SplitScreen;
+using EnhancedSpectator.Features.SpectatorPresence;
+using EnhancedSpectator.Networking;
 using UnityEngine;
 
 namespace EnhancedSpectator.GameInterop;
@@ -16,17 +18,16 @@ internal interface IGameSplitScreenRenderAdapter : IDisposable
     void UpdatePrimaryPose();
     /// <summary>
     /// After <see cref="UpdatePrimaryPose"/>, watching together: the large view is posed as the followed spectator's
-    /// camera (eased between their samples). Following owns input even while a matching sample is missing;
-    /// ending it returns control and the local lens.
+    /// completed camera timeline. Following owns input even while a matching sample is missing.
+    /// An audience member has no large-view pose to mirror; the local camera continues to follow its player.
+    /// Ending following returns control and the local lens.
     /// </summary>
-    void MirrorPrimaryPose((Vector3 Position, Quaternion Rotation, float FieldOfView)? pose, bool following);
+    void MirrorPrimaryPose(SpectatorCameraSample? pose, SpectatorSplitView followedView);
     /// <summary>The participant's player is inside the facility (where the choreography camera works).</summary>
     bool IsIndoors(SplitScreenParticipant participant);
     /// <summary>Preview only: the self third-person ghost floats in front of the large view's player, facing them.</summary>
     void FacePreviewGhost();
     void InvalidateRooms();
-    /// <summary>Before the views draw: the ship's furniture is where the game puts it this frame (see the adapter).</summary>
-    void FollowShip();
     void SetTileShadowCascades(int cascades);
     void RefreshVisibleRooms(IReadOnlyList<SplitScreenParticipant> participants);
     Texture? RenderView(SplitScreenParticipant participant, bool primary, int width, int height);

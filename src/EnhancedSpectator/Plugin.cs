@@ -32,6 +32,7 @@ public sealed class Plugin : BaseUnityPlugin
         EnhancedSpectatorConfig config = EnhancedSpectatorConfig.Bind(Config);
         GameInterop.NativeFadePass.Configure(config.Camera);
         GameInterop.LethalCompanySpectatorPresentation.Configure(config);
+        GameInterop.SpectatorEnemyVisibility.Configure(config);
         config.Camera.FadeRadius.SettingChanged += (_, _) => LogFadeConfiguration(config);
         config.Camera.FadeModelsWhileSpectating.SettingChanged += (_, _) => LogFadeConfiguration(config);
         config.Camera.FadeModelsNearby.SettingChanged += (_, _) => LogFadeConfiguration(config);
@@ -87,6 +88,7 @@ public sealed class Plugin : BaseUnityPlugin
         EnhancedSpectatorRuntimeDriver.BeginShutdown();
 
         _patchBootstrapper?.Dispose();
+        GameInterop.SpectatorEnemyVisibility.Shutdown();
         _featureBootstrapper?.Dispose();
         GameInterop.NativeFadePass.Shutdown();
 

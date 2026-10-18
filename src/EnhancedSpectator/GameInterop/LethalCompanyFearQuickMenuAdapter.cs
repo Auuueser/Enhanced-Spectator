@@ -246,6 +246,7 @@ public sealed partial class LethalCompanyFearQuickMenuAdapter : IGameFearQuickMe
         }
 
         _root = CreateRectObject("Enhanced Spectator Fear UI", menuCanvas.transform);
+        LethalCompanySplitScreenUiPresentation.ModMenu = _root.transform;
         RectTransform rootRect = (RectTransform)_root.transform;
         Stretch(rootRect);
         _root.transform.SetAsLastSibling();
@@ -372,6 +373,7 @@ public sealed partial class LethalCompanyFearQuickMenuAdapter : IGameFearQuickMe
             UnityEngine.Object.Destroy(_root);
         }
 
+        LethalCompanySplitScreenUiPresentation.ModMenu = null;
         _optionsRoot = null;
         _catalogRoot = null;
         _optionsOpen = false;

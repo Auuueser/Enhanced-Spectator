@@ -12,6 +12,7 @@ public sealed class FeatureRuntimeDispatchLists
 {
     private readonly List<IRuntimeTickable> _tickables = new List<IRuntimeTickable>();
     private readonly List<IRuntimeLateTickable> _lateTickables = new List<IRuntimeLateTickable>();
+    private readonly List<IRuntimeAfterLateTickable> _afterLateTickables = new List<IRuntimeAfterLateTickable>();
     private readonly List<IRuntimeCameraPreCullTickable> _cameraPreCullTickables = new List<IRuntimeCameraPreCullTickable>();
     private readonly List<IRuntimeGuiTickable> _guiTickables = new List<IRuntimeGuiTickable>();
 
@@ -24,6 +25,30 @@ public sealed class FeatureRuntimeDispatchLists
     /// Gets features that receive Unity LateUpdate callbacks.
     /// </summary>
     public IReadOnlyList<IRuntimeLateTickable> LateTickables => _lateTickables;
+
+    /// <summary>Callbacks after every game script's LateUpdate, with camera solving before networking.</summary>
+    public IReadOnlyList<IRuntimeAfterLateTickable> AfterLateTickables => _afterLateTickables;
+
+    /// <summary>Adds a callback after every game script's LateUpdate.</summary>
+    public void AddAfterLateTickable(IRuntimeAfterLateTickable tickable)
+        => _afterLateTickables.Add(tickable ?? throw new ArgumentNullException(nameof(tickable)));
+
+    /// <summary>
+    /// Dispatches completed-camera callbacks in registration order. The camera, models, split-screen views and
+    /// networking share this phase: one module failing must not stop the ones after it (reported once each).
+    /// </summary>
+    public void AfterLateTickAll()
+    {
+        foreach (var tickable in _afterLateTickables)
+        {
+            try { tickable.AfterLateTick(); }
+            catch (Exception ex)
+            {
+                if (_failedAfterLate.Add(tickable)) Logging.ModLog.Error($"{tickable.GetType().Name} failed after LateUpdate: {ex}");
+            }
+        }
+    }
+    private readonly HashSet<IRuntimeAfterLateTickable> _failedAfterLate = new HashSet<IRuntimeAfterLateTickable>();
 
     /// <summary>
     /// Gets features that receive Unity camera pre-cull callbacks.

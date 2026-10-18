@@ -30,6 +30,7 @@ internal sealed class SpectatorSocialModule : IFeatureModule, IRuntimeTickable, 
     // The game (lobby session) in which the local player declined the bets; they stay hidden until it ends.
     private readonly BetParticipation _participation = new BetParticipation();
     private int Session => Network.Game.Session;
+    private int _session;
     private bool OptedOut => _participation.Skipped(_preview != null, Session);
 
     internal SocialNetworkService Network { get; }
@@ -69,6 +70,9 @@ internal sealed class SpectatorSocialModule : IFeatureModule, IRuntimeTickable, 
 
     public void Tick()
     {
+        // DismissSummary/Close animate out. A session that has ended instead releases all of its persistent panels
+        // before the menu renders; the next game creates panels with its own HUD/font context.
+        if (Session != _session) { _session = Session; ReleasePanels(); }
         Network.Tick();
         Betting.Tick();
         Rating.Tick();
@@ -301,12 +305,19 @@ internal sealed class SpectatorSocialModule : IFeatureModule, IRuntimeTickable, 
         SpectatorSocialEvents.RaiseEmote(sender, SpectatorEmotes.Text(emote, _config.UseChineseText));
     }
 
+    private void ReleasePanels()
+    {
+        _picker?.Dispose(); _picker = null;
+        _panel?.Dispose(); _panel = null;
+        _ratingPanel?.Dispose(); _ratingPanel = null;
+    }
+
     public void Dispose()
     {
         Network.EmoteReceived -= OnEmote;
         Betting.Resolved -= ShowResult;
         Rating.Summary -= OnRatingSummary;
-        Chat.Dispose(); Network.Dispose(); _picker?.Dispose(); _picker = null; _panel?.Dispose(); _panel = null; _ratingPanel?.Dispose(); _ratingPanel = null;
+        Chat.Dispose(); Network.Dispose(); ReleasePanels();
         if (Current == this) Current = null;
     }
 }

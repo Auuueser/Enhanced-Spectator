@@ -101,6 +101,7 @@ public sealed class SpectatorVoiceRoutingService : IDisposable
         else _remoteTargets.Clear();
         // Split-screen: the audience and the watchers of enlarged views hear each other apart (see SplitScreenPresenceRules).
         SpectatorSplitView listener = isLocalPlayerDead ? SplitScreen.SplitScreenModule.LocalView : SpectatorSplitView.None;
+        bool lastOne = SplitScreen.SplitScreenModule.LiveLastOneLeft;
         _localClientId = localClientId;
         ulong localLeader = SpectatorPartyRules.Leader(localClientId, _followingOf);
 
@@ -113,9 +114,12 @@ public sealed class SpectatorVoiceRoutingService : IDisposable
             }
 
             _handled.Add(remoteTarget.LocalClientId);
+            // One large-view group: the same player watched (or watching together).
+            bool group = SplitScreenPresenceRules.SameGroup(SplitScreen.SplitScreenModule.LocalWatching, remoteTarget.TargetClientId,
+                SpectatorPartyRules.Leader(remoteTarget.LocalClientId, _followingOf) == localLeader);
             SplitVoiceRoute split = SplitScreenPresenceRules.Voice(
                 _networkService.TryGetRemoteSpectatorPose(remoteTarget.LocalClientId, out SpectatorPoseState latest) ? latest.SplitView : SpectatorSplitView.None,
-                listener, SpectatorPartyRules.Leader(remoteTarget.LocalClientId, _followingOf) == localLeader);
+                listener, group, lastOne);
             if (split == SplitVoiceRoute.Vanilla) continue;
             if (split == SplitVoiceRoute.Muted)
             {
@@ -146,6 +150,12 @@ public sealed class SpectatorVoiceRoutingService : IDisposable
             }
 
             SpectatorPoseState? poseState = TryGetMatchingPose(remoteTarget);
+            // A group member is heard only while its pose says it is spectating that player.
+            if (split == SplitVoiceRoute.Party && poseState is not { IsSpectating: true })
+            {
+                Mute(remoteTarget.LocalClientId, remoteTarget.LocalPlayerSlotId);
+                continue;
+            }
             SpectatorVoicePlaybackSettings playbackSettings = CreatePlaybackSettings(split);
 
             if (_adapter.TryApplySpectatorVoiceRoute(
@@ -167,7 +177,7 @@ public sealed class SpectatorVoiceRoutingService : IDisposable
             }
 
             DebugRouteSkipped(remoteTarget.LocalClientId, reason);
-            // A split watcher must stay silent until positional playback succeeds. Restoring vanilla here would
+            // A split watcher must stay silent until its group playback succeeds. Restoring vanilla here would
             // make a dead listener hear that speaker globally, including during target/pose packet transitions.
             if (split != SplitVoiceRoute.Configured) Mute(remoteTarget.LocalClientId, remoteTarget.LocalPlayerSlotId);
             else if (_activeRoutes.Contains(remoteTarget.LocalClientId))
@@ -176,7 +186,7 @@ public sealed class SpectatorVoiceRoutingService : IDisposable
             }
         }
 
-        if (SplitScreenPresenceRules.MutesUnmoddedDead(listener))
+        if (SplitScreenPresenceRules.MutesUnmoddedDead(listener, lastOne))
         {
             _adapter.CopyDeadPlayers(_deadPlayers);
             foreach (var (clientId, slotId) in _deadPlayers)
@@ -323,17 +333,16 @@ public sealed class SpectatorVoiceRoutingService : IDisposable
 
     private SpectatorVoicePlaybackSettings CreatePlaybackSettings(SplitVoiceRoute route)
     {
-        bool positional = route == SplitVoiceRoute.Positional;
-        // Watching together: the configured volume, without direction or distance (the party shares one camera).
+        // One large-view group: the configured volume, without direction or distance, whatever the cameras.
         return new SpectatorVoicePlaybackSettings(
             Mathf.Clamp01(_config.SpectatorVoiceToTargetVolume.Value),
-            positional || route != SplitVoiceRoute.Party && _config.SpectatorVoiceUseRemotePosePosition.Value,
+            route != SplitVoiceRoute.Party && _config.SpectatorVoiceUseRemotePosePosition.Value,
             _config.SpectatorVoiceEnableDistanceAttenuation.Value,
             _config.SpectatorVoiceMinDistance.Value,
             _config.SpectatorVoiceMaxDistance.Value,
             _config.SpectatorVoiceRolloffPower.Value,
             _config.SpectatorVoiceMinimumVolume.Value,
-            !positional && _config.SpectatorVoiceFallbackTo2DWhenPoseMissing.Value);
+            _config.SpectatorVoiceFallbackTo2DWhenPoseMissing.Value);
     }
 
     private SpectatorPoseState? TryGetMatchingPose(SpectatorTargetState remoteTarget)

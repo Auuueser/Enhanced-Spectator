@@ -12,7 +12,7 @@ namespace EnhancedSpectator.GameInterop;
 internal sealed partial class SplitScreenResultsPanel
 {
     private const float LevelChangeSeconds = .35f, LevelFlashSeconds = .4f, LevelGlowSeconds = .8f, LevelStampSeconds = .32f,
-        LevelDeltaSeconds = .5f, LevelNameTop = 30, LevelBarTop = 74;
+        LevelDeltaSeconds = .5f, LevelNameTop = 30, LevelBarTop = 74, StampRightMargin = 92;
     private static readonly Color LevelUpColor = new Color(1, .45f, .12f, 1), LevelDownColor = new Color(1, .27f, .24f, 1),
         LevelBarColor = new Color(.35f, .75f, 1, 1);
     private TextMeshProUGUI _levelNameOld = null!, _levelDelta = null!, _levelStamp = null!;
@@ -44,9 +44,12 @@ internal sealed partial class SplitScreenResultsPanel
         _levelLead = Rect("Level bar lead", _levelFill, Color.white, 3, 14).GetComponent<Image>();
         var lead = _levelLead.rectTransform; lead.anchorMin = lead.anchorMax = new Vector2(1, .5f); lead.pivot = new Vector2(.5f, .5f); lead.anchoredPosition = Vector2.zero;
         _levelFlash = Rect("Level flash", _levelBox, new Color(1, 1, 1, 0), ColumnWidth, SectionHeight).GetComponent<Image>();
-        _levelStamp = Label("Level stamp", _levelBox, 30, LevelUpColor); _levelStamp.alignment = TextAlignmentOptions.Center;
-        var stamp = _levelStamp.rectTransform; stamp.anchorMin = stamp.anchorMax = stamp.pivot = new Vector2(.5f, .5f);
-        stamp.sizeDelta = new Vector2(200, 44); stamp.anchoredPosition = new Vector2(ColumnWidth * .2f, 4); stamp.localRotation = Quaternion.Euler(0, 0, -8);
+        // The stamp ends just left of the experience figures (right-aligned at the edge): it is set against that end,
+        // turns and lands about it, so a longer word ("LEVEL UP", "LEVEL DOWN") grows leftwards, not over the numbers.
+        _levelStamp = Label("Level stamp", _levelBox, 30, LevelUpColor); _levelStamp.alignment = TextAlignmentOptions.MidlineRight;
+        _levelStamp.enableAutoSizing = true; _levelStamp.fontSizeMin = 16; _levelStamp.fontSizeMax = 30;
+        var stamp = _levelStamp.rectTransform; stamp.anchorMin = stamp.anchorMax = new Vector2(.5f, .5f); stamp.pivot = new Vector2(1, .5f);
+        stamp.sizeDelta = new Vector2(220, 44); stamp.anchoredPosition = new Vector2(ColumnWidth / 2 - StampRightMargin, 4); stamp.localRotation = Quaternion.Euler(0, 0, -8);
         for (int i = 0; i < 4; i++) _levelEdges[i] = _levelBox.Find("Level edge " + i).GetComponent<Image>();
     }
 

@@ -8,7 +8,8 @@ using UnityEngine.Rendering.HighDefinition;
 
 namespace EnhancedSpectator.GameInterop;
 
-// Owns only private targets/materials. Original alpha-tested depth passes preserve native silhouettes.
+// Owns only private targets/materials. Opaque bodies draw with their own depth pass; cut-out and transparent ones with
+// the private cut-out surface (HDRP/Lit's own depth pass drew nothing for them here: hoarding bug, barber, maneater).
 internal sealed class SpectatorThermalPass : CustomPass
 {
     private static SpectatorThermalPass? _instance;
@@ -24,6 +25,8 @@ internal sealed class SpectatorThermalPass : CustomPass
     private readonly List<Material> _materials=new List<Material>();
     private readonly Dictionary<Material,Material> _fallbacks=new Dictionary<Material,Material>();
     private readonly Dictionary<Material,int> _depthPasses=new Dictionary<Material,int>();
+    private Material? _flashMaterial;
+    private Mesh? _flashMesh;
     private readonly Plane[] _planes=new Plane[6];
     internal static bool Owns(CustomPass pass) => pass==_instance;
     internal static bool Requested(Camera camera) => !_failed && _instance!=null && LethalCompanySpectatorPresentation.ThermalRequested(camera);
@@ -109,6 +112,7 @@ internal sealed class SpectatorThermalPass : CustomPass
                     foreach(var level in group)
                         if(SpectatorThermalSources.AnyVisible(level,camera)) { foreach(var renderer in level) DrawBody(cmd,camera,renderer); break; }
             }
+            DrawFlashes(cmd);
             float near=camera.nearClipPlane,far=camera.farClipPlane;
             float x=SystemInfo.usesReversedZBuffer ? far/near-1 : 1-far/near;
             float y=SystemInfo.usesReversedZBuffer ? 1 : far/near;
@@ -135,12 +139,32 @@ internal sealed class SpectatorThermalPass : CustomPass
             var material=_materials[i]; if(material==null) continue;
             if(!_depthPasses.TryGetValue(material,out int pass))
             {
-                pass=material.FindPass("DepthOnly"); if(pass<0) pass=material.FindPass("DepthForwardOnly");
+                pass=-1;
+                if(Cutoff(material)<0) { pass=material.FindPass("DepthOnly"); if(pass<0) pass=material.FindPass("DepthForwardOnly"); }
                 if(pass>=0 && !material.GetShaderPassEnabled(material.GetPassName(pass))) pass=-1;
                 _depthPasses.Add(material,pass);
             }
             if(pass>=0) cmd.DrawRenderer(renderer,material,i,pass);
             else cmd.DrawRenderer(renderer,Fallback(material),i,0);
+        }
+    }
+    // A muzzle flash: a blob along the barrel, shrinking away over the flash's life.
+    private void DrawFlashes(CommandBuffer cmd)
+    {
+        SpectatorThermalSources.ExpireFlashes();
+        if(SpectatorThermalSources.Flashes.Count==0) return;
+        if(_flashMaterial==null)
+        {
+            _flashMaterial=new Material(_surfaceShader!) { hideFlags=HideFlags.HideAndDontSave }; _flashMaterial.SetFloat("_Cutoff",-1);
+            // The 1 m primitive sphere (CreatePrimitive's mesh). "Sphere.fbx" is another, 2 m one: the burst doubled
+            // and swallowed the gun and the shooter's hand.
+            _flashMesh=Resources.GetBuiltinResource<Mesh>("New-Sphere.fbx");
+        }
+        foreach(var (muzzle,aim,at) in SpectatorThermalSources.Flashes)
+        {
+            float size=1-(Time.unscaledTime-at)/SpectatorThermalSources.FlashSeconds;
+            Vector3 forward=aim.forward;
+            cmd.DrawMesh(_flashMesh,Matrix4x4.TRS(muzzle.position+forward*(.3f*size),Quaternion.LookRotation(forward),new Vector3(.3f,.3f,.8f)*size),_flashMaterial,0,0);
         }
     }
     private Material Fallback(Material source)
@@ -150,11 +174,16 @@ internal sealed class SpectatorThermalPass : CustomPass
         foreach(string property in new[]{"_BaseColorMap","_BaseMap","_MainTex"})
             if(source.HasProperty(property) && source.GetTexture(property)!=null)
             { material.SetTexture("_MainTex",source.GetTexture(property)); material.SetTextureScale("_MainTex",source.GetTextureScale(property)); material.SetTextureOffset("_MainTex",source.GetTextureOffset(property)); break; }
-        float cutoff=source.HasProperty("_AlphaCutoff")?source.GetFloat("_AlphaCutoff"):source.HasProperty("_Cutoff")?source.GetFloat("_Cutoff"):.05f;
-        bool clip=source.IsKeywordEnabled("_ALPHATEST_ON") || source.renderQueue>=2450;
-        material.SetFloat("_Cutoff",clip?Mathf.Max(.01f,cutoff):-1);
+        material.SetFloat("_Cutoff",Cutoff(source));
         material.SetFloat("_Opacity",source.HasProperty("_BaseColor")?source.GetColor("_BaseColor").a:source.HasProperty("_Color")?source.GetColor("_Color").a:1);
         _fallbacks.Add(source,material); return material;
+    }
+    // Alpha-tested: the material's own cutoff. Transparent: any visible surface. Opaque: no cut (-1).
+    private static float Cutoff(Material source)
+    {
+        if(source.IsKeywordEnabled("_ALPHATEST_ON") || source.renderQueue>=2450 && source.renderQueue<=2500)
+            return Mathf.Max(.01f,source.HasProperty("_AlphaCutoff")?source.GetFloat("_AlphaCutoff"):source.HasProperty("_Cutoff")?source.GetFloat("_Cutoff"):.5f);
+        return source.renderQueue>2500 ? .05f : -1;
     }
     private void ReleaseTargets()
     {
@@ -162,5 +191,5 @@ internal sealed class SpectatorThermalPass : CustomPass
         _scene=_heat=_cover=_blur=_glow=null;
     }
     private void Release()
-    { ReleaseTargets(); _sources.Clear(); foreach(var m in _fallbacks.Values) UnityEngine.Object.Destroy(m); _fallbacks.Clear(); _depthPasses.Clear(); if(_composite!=null) UnityEngine.Object.Destroy(_composite); if(_bundle!=null) _bundle.Unload(true); }
+    { ReleaseTargets(); _sources.Clear(); foreach(var m in _fallbacks.Values) UnityEngine.Object.Destroy(m); _fallbacks.Clear(); if(_flashMaterial!=null) UnityEngine.Object.Destroy(_flashMaterial); _depthPasses.Clear(); if(_composite!=null) UnityEngine.Object.Destroy(_composite); if(_bundle!=null) _bundle.Unload(true); }
 }

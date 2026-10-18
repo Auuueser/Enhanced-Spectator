@@ -189,7 +189,8 @@ internal sealed partial class SplitScreenResultsPanel : IDisposable
     /// </summary>
     internal void SetBeneath(Canvas? hud)
     {
-        if (_beneath == hud) return;
+        // Unity-null after scene unload still needs its old HUD-relative sorting order released.
+        if (ReferenceEquals(_beneath, hud)) return;
         _beneath = hud;
         SplitScreenView.Layer(_canvas, hud, 32005, -1);
     }
@@ -360,7 +361,9 @@ internal sealed partial class SplitScreenResultsPanel : IDisposable
             SplitScreenView.Frame4("Note edge ", chip, Alpha(Accent, .55f), 1);
             var label = Label("Note text", chip, card.ChipFont, new Color(1, .8f, .62f, 1), false); SplitScreenView.Stretch(label.rectTransform);
             label.alignment = TextAlignmentOptions.Center; label.text = note;
-            float width = label.GetPreferredValues(note).x + 16;
+            // Measured as shown: a translation mod may rewrite the text as it is set (LC Chinese Project translates the
+            // English notes on assignment), and the English width left the chip far wider than its words.
+            float width = label.GetPreferredValues(label.text).x + 16;
             if (x + width > card.NotesLeft + card.NotesWidth) { Discard(chip); break; }
             chip.pivot = new Vector2(.5f, .5f);
             chip.sizeDelta = new Vector2(width, card.ChipHeight);

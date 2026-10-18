@@ -37,9 +37,6 @@ internal sealed partial class SplitScreenView
     private int _votePopIndex = -1;
     private float _tagWidth, _countWidth, _departureWidth;
 
-    /// <summary>Room the views leave above themselves for the strip.</summary>
-    private float LeaveVoteReserve => _stripVisible ? Mathf.Round(32 * _uiScale) : 0;
-
     private void CreateLeaveVote()
     {
         _strip = CreateImage("Leave vote strip", _hudRoot, new Color(.02f, .022f, .026f, .82f)).rectTransform;
@@ -117,7 +114,6 @@ internal sealed partial class SplitScreenView
             return;
         }
         LayoutLeaveVote(_voteShown, deltaTime);
-        _strip.anchoredPosition = new Vector2(0, -StripTop() + (1 - SplitScreenResultsPanel.EaseOut(alpha)) * 8 * _uiScale);
     }
 
     // The vote passed while on show: every cell filled (the last vote landing with its pop), this player's vote kept
@@ -132,10 +128,11 @@ internal sealed partial class SplitScreenView
         _voteEnd = 0; _votePassed = false; _voteDirty = true;
     }
 
-    // Midway between the screen's top and the view right below the strip (else the highest view), as the views move.
-    private float StripTop()
+    // The top row's distance from the screen's top: midway between it and the view right below the row's span (from
+    // its centre, left to right; else the highest view), as the views move.
+    private float TopRowTop(float height, float spanLeft, float spanRight)
     {
-        float height = _strip.sizeDelta.y, half = _strip.sizeDelta.x / 2, centre = _hudRoot.rect.center.x, rootTop = _hudRoot.rect.yMax, below = float.MaxValue, highest = float.MaxValue;
+        float centre = _hudRoot.rect.center.x, rootTop = _hudRoot.rect.yMax, below = float.MaxValue, highest = float.MaxValue;
         foreach (var tile in _tiles.Values)
         {
             if (tile.Retiring) continue;
@@ -143,7 +140,7 @@ internal sealed partial class SplitScreenView
             Vector3 left = _hudRoot.InverseTransformPoint(_clockCorners[1]), right = _hudRoot.InverseTransformPoint(_clockCorners[2]);
             float gap = rootTop - left.y;
             highest = Mathf.Min(highest, gap);
-            if (left.x < centre + half && right.x > centre - half) below = Mathf.Min(below, gap);
+            if (left.x < centre + spanRight && right.x > centre + spanLeft) below = Mathf.Min(below, gap);
         }
         float room = below < float.MaxValue ? below : highest;
         return room < float.MaxValue ? Mathf.Max(Mathf.Round(6 * _uiScale), (room - height) / 2) : Mathf.Round(6 * _uiScale);

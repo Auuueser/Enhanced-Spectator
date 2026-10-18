@@ -81,10 +81,13 @@ internal static class SpectatorHintText
         {
             bool large = module.LargeViewOpen;
             var split = module.EffectiveMode;
-            if (large) Status("当前：放大 · " + ModeName(split, true), "Now: enlarged · " + ModeName(split, false));
+            // The last player left is always enlarged: no tiles to return to.
+            if (module.LastOneLeft) Status("当前：最后一人 · " + ModeName(split, true), "Now: last player · " + ModeName(split, false));
+            else if (large) Status("当前：放大 · " + ModeName(split, true), "Now: enlarged · " + ModeName(split, false));
             else Status("当前：平铺", "Now: tiled");
-            rows.Add(large ? new Row(cn ? "返回平铺" : "Back to tiles", cn ? "点击窗口" : "Click a view")
-                : new Row(cn ? "放大窗口（观看该玩家）" : "Enlarge (watch that player)", cn ? "点击窗口" : "Click a view"));
+            if (!module.LastOneLeft)
+                rows.Add(large ? new Row(cn ? "返回平铺" : "Back to tiles", cn ? "点击窗口" : "Click a view")
+                    : new Row(cn ? "放大窗口（观看该玩家）" : "Enlarge (watch that player)", cn ? "点击窗口" : "Click a view"));
             // The same keys work in the preview; the watch roster belongs to the single view, not the split-screen.
             Single("关闭分屏", "Close split-screen", c.Camera.SplitScreen.ToggleKey.Value);
             // A camera key with every view tiled enlarges the audio view with that camera.

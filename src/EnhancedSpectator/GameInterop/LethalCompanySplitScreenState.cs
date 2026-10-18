@@ -16,13 +16,15 @@ internal readonly struct SplitScreenSessionContext
     internal readonly bool Dead, Eligible, MenuOpen, GameUiOpen, InputBlocked, PreviewInputBlocked, AllDead, ShipLeaving, GameOverCamera;
     // Chat: the game's chat line is being typed (the split-screen shows it in its own panel, over the views).
     internal readonly bool Chat;
+    // Leaving: this player is leaving the game (quitting, or the host gone), from the moment it starts until the menu loads.
+    internal readonly bool Leaving;
     internal readonly SplitScreenKey? Target;
     internal SplitScreenSessionContext(int session, bool dead, bool eligible, bool menuOpen, bool gameUiOpen, bool inputBlocked, bool previewInputBlocked,
-        SplitScreenKey? target, bool allDead = false, bool shipLeaving = false, bool chat = false, bool gameOverCamera = false)
+        SplitScreenKey? target, bool allDead = false, bool shipLeaving = false, bool chat = false, bool gameOverCamera = false, bool leaving = false)
     {
         Session = session; Dead = dead; Eligible = eligible; MenuOpen = menuOpen; GameUiOpen = gameUiOpen;
         InputBlocked = inputBlocked; PreviewInputBlocked = previewInputBlocked; Target = target; AllDead = allDead; ShipLeaving = shipLeaving; Chat = chat;
-        GameOverCamera = gameOverCamera;
+        GameOverCamera = gameOverCamera; Leaving = leaving;
     }
 }
 
@@ -48,7 +50,9 @@ internal sealed class LethalCompanySplitScreenState
     {
         var round = StartOfRound.Instance;
         var local = round != null ? round.localPlayerController : null;
-        if (local == null) return default;
+        // NGO can destroy the player/round before MainMenu.Awake ends the disconnect. Keep that independent signal.
+        bool leaving = GameNetworkManager.Instance != null && GameNetworkManager.Instance.isDisconnecting;
+        if (local == null) return new SplitScreenSessionContext(0, false, false, false, false, false, false, null, leaving: leaving);
         var target = local.spectatedPlayerScript;
         SplitScreenKey? key = target != null && !target.isPlayerDead && !target.disconnectedMidGame
             ? new SplitScreenKey(target.actualClientId, target.playerClientId) : null;
@@ -61,7 +65,8 @@ internal sealed class LethalCompanySplitScreenState
         return new SplitScreenSessionContext(round!.GetInstanceID(), local.isPlayerDead,
             local.isPlayerDead && local.isInGameOverAnimation <= 0 && round.spectateCamera != null && round.activeCamera == round.spectateCamera,
             menu, menu || textEntry, !Application.isFocused || _input.IsUiInputBlocked(), !Application.isFocused || textEntry, key,
-            round.allPlayersDead, round.shipIsLeaving, local.isTypingChat, round.overrideSpectateCamera);
+            round.allPlayersDead, round.shipIsLeaving, local.isTypingChat, round.overrideSpectateCamera,
+            leaving);
     }
 
     /// <summary>

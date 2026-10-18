@@ -46,6 +46,8 @@ public sealed class FeatureBootstrapper : IDisposable
             SpectatorFreecamSettings freecamSettings = new SpectatorFreecamSettings(config);
             SpectatorModule spectatorModule = new SpectatorModule(gameSpectatorAdapter, freecamSettings);
             var splitScreen = new SplitScreenModule(config);
+            var poseVisuals = new FeatureRuntimeDispatchLists();
+            splitScreen.CameraPoseReady = poseVisuals.AfterLateTickAll;
             FearVisualOverrideRegistry fearVisualOverrides = new FearVisualOverrideRegistry();
             RemoteSpectatorPosePresentationService posePresentationService =
                 new RemoteSpectatorPosePresentationService(gameSpectatorAdapter);
@@ -53,7 +55,7 @@ public sealed class FeatureBootstrapper : IDisposable
             _features.Add(splitScreen);
             _runtimeDispatchLists.AddTickable(splitScreen);
             _runtimeDispatchLists.AddTickable(spectatorModule);
-            _runtimeDispatchLists.AddLateTickable(spectatorModule);
+            _runtimeDispatchLists.AddAfterLateTickable(spectatorModule);
             _runtimeDispatchLists.AddCameraPreCullTickable(spectatorModule);
 
             var visibility = new SpectatorHudModule(new LethalCompanySpectatorUiVisibility(config));
@@ -82,6 +84,7 @@ public sealed class FeatureBootstrapper : IDisposable
             _features.Add(disconnectTargetSwitchService);
             _runtimeDispatchLists.AddTickable(disconnectTargetSwitchService);
 
+            NetworkingModule networkingModule;
             // Local menu and options must exist even when networking is disabled. Services enforce their own gates.
             {
                 LethalCompanyVoiceActivityProvider voiceActivityProvider = new LethalCompanyVoiceActivityProvider();
@@ -92,9 +95,8 @@ public sealed class FeatureBootstrapper : IDisposable
                     spectatorModule,
                     voiceActivityProvider,
                     new UnityNetcodeMessagingTransport(() => config.DebugNetworkMessages.Value));
-                NetworkingModule networkingModule = new NetworkingModule(networkService);
+                networkingModule = new NetworkingModule(networkService);
                 _features.Add(networkingModule);
-                _runtimeDispatchLists.AddTickable(networkingModule);
                 var social = new Social.SpectatorSocialModule(config);
                 _features.Add(social);
                 _runtimeDispatchLists.AddTickable(social);
@@ -110,9 +112,8 @@ public sealed class FeatureBootstrapper : IDisposable
                 {
                     if (!networkService.TryGetRemoteSpectatorPose(clientId, out var pose) || !pose.IsSpectating
                         || pose.TargetClientId is not { } target || pose.TargetPlayerSlotId is not { } slot) return null;
-                    posePresentationService.ResolveCamera(pose, out Vector3 position, out Quaternion rotation);
-                    return (position, rotation, pose.CameraMode == 0 ? null : (SpectatorCameraMode)(pose.CameraMode - 1), pose.CameraStyle,
-                        new SplitScreenKey(target, slot), pose.HasCameraPose ? pose.CameraFieldOfView : 0);
+                    return (posePresentationService.CameraSample(pose, networkService.CameraReceivedAt(clientId)), pose.CameraMode == 0 ? null : (SpectatorCameraMode)(pose.CameraMode - 1),
+                        pose.CameraStyle, new SplitScreenKey(target, slot));
                 };
                 splitScreen.IsModPeer = clientId => networkService.TryGetPeerCapability(clientId, out var capability)
                     && Networking.ModPeerCapabilityRules.SupportsCurrentSpectatorTargetSync(capability);
@@ -199,10 +200,9 @@ public sealed class FeatureBootstrapper : IDisposable
                             () => ModLog.IsDebugEnabled
                                 && config.EnableDebugLogging.Value
                                 && config.DebugSpectatorVoiceRouting.Value,
-                            // Outsiders hear a watch-together follower where its model stands, in the formation.
+                            // Positional voices use the same resolved movement, camera offsets and formation as models.
                             pose =>
                             {
-                                if (!presenceService.Parties.TryGetFormation(pose.LocalClientId, out _, out _)) return pose.Position;
                                 posePresentationService.Resolve(pose, out Vector3 position, out _, out _);
                                 return position;
                             }),
@@ -222,7 +222,7 @@ public sealed class FeatureBootstrapper : IDisposable
                         new RuntimeEnemyVisualFactory(),
                         posePresentationService));
                 _features.Add(fearVisualModule);
-                _runtimeDispatchLists.AddLateTickable(fearVisualModule);
+                poseVisuals.AddAfterLateTickable(fearVisualModule);
 
                 if (config.EnableFloatingHeadVisuals.Value)
                 {
@@ -238,7 +238,7 @@ public sealed class FeatureBootstrapper : IDisposable
                         posePresentationService);
                     FloatingHeadModule floatingHeadModule = new FloatingHeadModule(visualService);
                     _features.Add(floatingHeadModule);
-                    _runtimeDispatchLists.AddLateTickable(floatingHeadModule);
+                    poseVisuals.AddAfterLateTickable(floatingHeadModule);
                     _runtimeDispatchLists.AddCameraPreCullTickable(floatingHeadModule);
                     _runtimeDispatchLists.AddGuiTickable(floatingHeadModule);
                 }
@@ -247,9 +247,12 @@ public sealed class FeatureBootstrapper : IDisposable
             if (localAvatarModule != null)
             {
                 _features.Add(localAvatarModule);
-                _runtimeDispatchLists.AddLateTickable(localAvatarModule);
+                poseVisuals.AddAfterLateTickable(localAvatarModule);
             }
-            _runtimeDispatchLists.AddLateTickable(splitScreen);
+            // SpectatorModule solves ordinary views; split-screen solves its own view later. Its pose-ready boundary
+            // places models after either camera has finished, before any private render; networking publishes last.
+            _runtimeDispatchLists.AddAfterLateTickable(splitScreen);
+            _runtimeDispatchLists.AddAfterLateTickable(networkingModule);
         }
 
         if (config.EnableModelInspection.Value)
@@ -327,6 +330,20 @@ public sealed class FeatureBootstrapper : IDisposable
         }
 
         _runtimeDispatchLists.LateTickAll();
+    }
+
+    /// <summary>
+    /// Runs after every script's LateUpdate, before rendering: the split-screen lays out and draws its views there, so
+    /// they show the frame as the game's own camera will (held items on hands, ship furniture with the ship).
+    /// </summary>
+    public void AfterLateTick()
+    {
+        if (!_initialized)
+        {
+            return;
+        }
+
+        _runtimeDispatchLists.AfterLateTickAll();
     }
 
     /// <summary>

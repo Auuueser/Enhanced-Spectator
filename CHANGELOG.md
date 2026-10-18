@@ -3,6 +3,50 @@
 ## 中文
 
 <details open>
+<summary><strong>0.4.6</strong></summary>
+
+### 观战分屏
+
+- 平铺时分屏时钟移到顶部，与起飞、投票卡片并列。
+- 手持物品不再抖动。
+- 放大观看的玩家阵亡后，自动放大下一位玩家；只剩一名存活玩家时始终放大显示。
+- 退出游戏时画面保持到返回主菜单，不再闪现原版画面或丢失光标。
+- 分屏时 ESC 菜单中的 Enhanced Spectator 入口正常显示。
+
+### 语音与观众席
+
+- 观看同一名玩家的人不分方向、满音量互相听到，观看不同玩家的人互相静音；只剩一名存活玩家时所有阵亡玩家互相听到。
+- 观众席中听不到的玩家显示为灰色。
+- 说话时名牌与观众卡片以橙色填充提示，长名字的喇叭图标不再被遮挡。
+
+### 一起观看
+
+- 跟随观看时与对方镜头保持一致，起步、停步、转身和走路都平滑跟随。
+- 被观看的玩家转身时，观战模型不再绕着他转。
+
+### 观战模型
+
+- 3 秒未操作视角的观战者自动隐藏，不再受对方“闲置自动归位”设置影响；手部轻微晃动不算操作。
+- 电影、运镜与监视器模式下说话时半透明显示，并位于实际镜头位置。
+- 死亡后在舱门关闭的飞船内也能看到室外怪物。
+
+### 热成像
+
+- 补全 Hoarding Bug、Barber、Baboon Hawk、Maneater、Cadaver Bloom 与 Masked 的热成像。
+- 新增 Apparatus 与霰弹枪枪口火焰的热成像。
+
+### 结算与兼容
+
+- 结算页面使用高清头像；翻译模组下评语卡片宽度与文字一致。
+- Player_Status_Bars 状态条在分屏各窗口按各自镜头距离显示。
+
+### 其他
+
+- 常规改进。
+
+</details>
+
+<details>
 <summary><strong>0.4.5</strong></summary>
 
 ### 观战分屏
@@ -216,6 +260,50 @@
 ## English
 
 <details open>
+<summary><strong>0.4.6</strong></summary>
+
+### Split-screen spectating
+
+- Tiled, the split-screen clock moves to the top row beside the takeoff and vote cards.
+- Held items no longer jitter.
+- When the enlarged player dies, the next player is enlarged; with one player left alive, that view stays enlarged.
+- Leaving the game holds the last picture until the main menu, without a vanilla flash or a lost cursor.
+- The Enhanced Spectator entry in the ESC menu shows during split-screen.
+
+### Voice and audience
+
+- Watchers of the same player hear each other at full volume without direction, watchers of different players are muted; with one player left alive, every dead player hears every other.
+- Audience members you cannot hear are greyed out.
+- Talking fills the name plate and audience card with orange; long names no longer cover the speaker icon.
+
+### Watching together
+
+- Following matches the other spectator's camera, smoothly through starts, stops, turns and walking.
+- A watched player turning no longer swings spectator models around them.
+
+### Spectator models
+
+- Spectators who leave the camera alone for 3 seconds hide, whatever their own idle recentering setting; a hand resting on the mouse does not count.
+- Cinematic, choreography and monitor spectators show translucent at their actual camera while talking.
+- Dead spectators inside the ship see outdoor monsters with the doors closed.
+
+### Thermal imaging
+
+- Thermal now covers the Hoarding Bug, Barber, Baboon Hawk, Maneater, Cadaver Bloom and Masked.
+- The apparatus and shotgun muzzle flashes show on thermal.
+
+### Report and compatibility
+
+- The round report uses full-resolution avatars; note cards fit translated text.
+- Player_Status_Bars bars show in each split-screen view by that view's camera distance.
+
+### Other
+
+- General improvements.
+
+</details>
+
+<details>
 <summary><strong>0.4.5</strong></summary>
 
 ### Split-screen spectating

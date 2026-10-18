@@ -137,8 +137,8 @@ public sealed class SpectatorInputService
     }
 
     /// <summary>Mouse activity that operates the spectator view, excluding keyboard push-to-talk.</summary>
-    internal bool HasCameraMouseActivity => !Cursor.visible && (ReadLookDelta().sqrMagnitude > .0001f
-        || !Mathf.Approximately(ReadScrollDelta(), 0f) || AnyMouseButtonPressed());
+    /// <summary>A wheel step or a mouse button on the view (not with a free cursor).</summary>
+    internal bool HasCameraClick => !Cursor.visible && (!Mathf.Approximately(ReadScrollDelta(), 0f) || AnyMouseButtonPressed());
 
     /// <summary>Any key or mouse button went down this frame.</summary>
     public static bool AnyKeyOrButtonPressed() => Keyboard.current?.anyKey.wasPressedThisFrame == true || AnyMouseButtonPressed();

@@ -61,7 +61,7 @@ public static class ModNetworkSerializer
         + FastBufferWriter.GetWriteSize<ulong>()
         + FastBufferWriter.GetWriteSize<bool>()
         + FastBufferWriter.GetWriteSize<byte>() * 2
-        + FastBufferWriter.GetWriteSize<bool>() + FastBufferWriter.GetWriteSize<float>() * 8;
+        + FastBufferWriter.GetWriteSize<bool>() * 3 + FastBufferWriter.GetWriteSize<float>() * 11;
 
     /// <summary>
     /// Gets the byte capacity needed for one peer identity message.
@@ -297,6 +297,12 @@ public static class ModNetworkSerializer
             writer.WriteValueSafe(state.CameraLocalRotation.x); writer.WriteValueSafe(state.CameraLocalRotation.y);
             writer.WriteValueSafe(state.CameraLocalRotation.z); writer.WriteValueSafe(state.CameraLocalRotation.w);
             writer.WriteValueSafe(state.CameraFieldOfView);
+            if (state.CameraTimeline)
+            {
+                writer.WriteValueSafe(true);
+                writer.WriteValueSafe(state.HasCameraPivot);
+                writer.WriteValueSafe(state.CameraPivotOffset.x); writer.WriteValueSafe(state.CameraPivotOffset.y); writer.WriteValueSafe(state.CameraPivotOffset.z);
+            }
         }
     }
 
@@ -418,6 +424,15 @@ public static class ModNetworkSerializer
                 reader.ReadValueSafe(out cameraFov);
                 cameraLocalPosition = new Vector3(cx, cy, cz); cameraLocalRotation = new Quaternion(qx, qy, qz, qw);
             }
+            bool cameraTimeline = false, hasCameraPivot = false;
+            Vector3 cameraPivotOffset = default;
+            if (hasCameraPose && reader.TryBeginRead(sizeof(byte))) reader.ReadValueSafe(out cameraTimeline);
+            if (cameraTimeline && reader.TryBeginRead(sizeof(byte) + sizeof(float) * 3))
+            {
+                reader.ReadValueSafe(out hasCameraPivot);
+                reader.ReadValueSafe(out float px); reader.ReadValueSafe(out float py); reader.ReadValueSafe(out float pz);
+                cameraPivotOffset = new Vector3(px, py, pz);
+            }
             state = new SpectatorPoseState(
                 isSpectating,
                 localClientId,
@@ -434,7 +449,8 @@ public static class ModNetworkSerializer
                 targetMotionReferenceLocalPosition,
                 targetMotionReferenceLocalRotation,
                 modelStowed, autoCentering, (SpectatorSplitView)splitView, following ? followingClientId : (ulong?)null, firstPersonView,
-                cameraMode, cameraStyle, hasCameraPose, cameraLocalPosition, cameraLocalRotation, cameraFov);
+                cameraMode, cameraStyle, hasCameraPose, cameraLocalPosition, cameraLocalRotation, cameraFov, cameraTimeline,
+                hasCameraPivot ? cameraPivotOffset : (Vector3?)null);
             return true;
         }
         catch (Exception ex)

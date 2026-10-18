@@ -31,6 +31,11 @@ public sealed class SpectatorLifecyclePatchModule : IPatchModule
         harmony.CreateClassProcessor(typeof(SpectatedPlayerEffectsPatch)).Patch();
         harmony.CreateClassProcessor(typeof(SpectatorInteriorCullingPatch)).Patch();
         harmony.CreateClassProcessor(typeof(SpectatorInteriorRefreshPatch)).Patch();
+        harmony.CreateClassProcessor(typeof(SpectatorEnemyShipRulePatch)).Patch();
+        harmony.CreateClassProcessor(typeof(SpectatorEnemyStartPatch)).Patch();
+        harmony.CreateClassProcessor(typeof(SpectatorMaskedStartPatch)).Patch();
+        harmony.CreateClassProcessor(typeof(ThermalApparatusPatch)).Patch();
+        harmony.CreateClassProcessor(typeof(ThermalShotgunPatch)).Patch();
         harmony.CreateClassProcessor(typeof(SwitchCameraPatch)).Patch();
         harmony.CreateClassProcessor(typeof(GameOverSpectateModePatch)).Patch();
         harmony.CreateClassProcessor(typeof(ReviveDeadPlayersPatch)).Patch();
@@ -109,6 +114,39 @@ public sealed class SpectatorLifecyclePatchModule : IPatchModule
             GameInterop.SpectatorInteriorVisibility.AfterVanillaRefresh(__instance);
     }
 
+    // Outside enemies stay visible to a spectator who died in the ship with the doors closed.
+    [HarmonyPatch(typeof(StartOfRound), nameof(StartOfRound.SetPlayerSafeInShip))]
+    private static class SpectatorEnemyShipRulePatch
+    {
+        private static bool Prefix() => !GameInterop.SpectatorEnemyVisibility.ShowAllWhileDead();
+    }
+
+    [HarmonyPatch(typeof(EnemyAI), nameof(EnemyAI.Start))]
+    private static class SpectatorEnemyStartPatch
+    {
+        private static void Postfix(EnemyAI __instance) => GameInterop.SpectatorEnemyVisibility.Started(__instance);
+    }
+
+    [HarmonyPatch(typeof(MaskedPlayerEnemy), nameof(MaskedPlayerEnemy.Start))]
+    private static class SpectatorMaskedStartPatch
+    {
+        private static void Postfix(MaskedPlayerEnemy __instance) => GameInterop.SpectatorEnemyVisibility.MaskedStarted(__instance);
+    }
+
+    // Thermal shows the apparatus and shotgun muzzle flashes.
+    [HarmonyPatch(typeof(LungProp), nameof(LungProp.Start))]
+    private static class ThermalApparatusPatch
+    {
+        private static void Postfix(LungProp __instance) => GameInterop.SpectatorThermalSources.ApparatusStarted(__instance);
+    }
+
+    [HarmonyPatch(typeof(ShotgunItem), nameof(ShotgunItem.ShootGun))]
+    private static class ThermalShotgunPatch
+    {
+        private static void Postfix(ShotgunItem __instance) =>
+            GameInterop.SpectatorThermalSources.GunFired(__instance.gunShootParticle.transform, __instance.shotgunRayPoint);
+    }
+
     /// <inheritdoc />
     public void Unregister(Harmony harmony)
     {
@@ -148,6 +186,7 @@ public sealed class SpectatorLifecyclePatchModule : IPatchModule
         {
             if (IsLocalPlayerOrOwner(__instance))
             {
+                GameInterop.SpectatorEnemyVisibility.LocalLifeChanged();
                 SpectatorLifecycleEvents.Raise(SpectatorLifecycleEventKind.PlayerDied);
             }
         }
@@ -198,6 +237,7 @@ public sealed class SpectatorLifecyclePatchModule : IPatchModule
     {
         private static void Postfix()
         {
+            GameInterop.SpectatorEnemyVisibility.LocalLifeChanged();
             SpectatorLifecycleEvents.Raise(SpectatorLifecycleEventKind.Revived);
         }
     }

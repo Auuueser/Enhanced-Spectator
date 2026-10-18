@@ -34,7 +34,7 @@ internal sealed partial class SplitScreenView : IDisposable
     private readonly Dictionary<SplitScreenKey, float> _speaking = new Dictionary<SplitScreenKey, float>();
     private bool _showSpeaking = true;
     private float _clock;
-    private static readonly Color SpeakingEdge = SplitScreenDeadBar.SpeakingColor;
+    private static readonly Color PlateColor = new Color(0, 0, 0, .58f), SpeakingPlate = SplitScreenDeadBar.SpeakingFill;
     private readonly RectTransform _banner;
     private readonly TextMeshProUGUI _bannerText;
     private readonly CanvasGroup _bannerGroup;
@@ -92,8 +92,7 @@ internal sealed partial class SplitScreenView : IDisposable
 
     internal bool IsReady => _videoCanvas != null && _hudCanvas != null && _font != null;
     internal Canvas VideoCanvas => _videoCanvas;
-    // A scene unload can destroy the canvases before the next EnsureView rebuilds them (see IsReady); the module
-    // asks this at the end of every update, early returns included.
+    // The module asks this at the end of every update, including after shutdown.
     internal bool DrawsBeneathHud => _videoCanvas != null && _videoCanvas.gameObject.activeInHierarchy && _beneath != null;
     internal Canvas HudCanvas => _hudCanvas;
     // Existing mod-owned roster/hints can borrow this front layer; their adapters restore their original parent before this view is disposed.
@@ -191,7 +190,8 @@ internal sealed partial class SplitScreenView : IDisposable
     /// </summary>
     internal void SetBeneath(Canvas? hud)
     {
-        if (_beneath == hud) return;
+        // Unity's destroyed HUD compares equal to null, but its old camera-space setup still needs to be reset.
+        if (ReferenceEquals(_beneath, hud)) return;
         _beneath = hud;
         Layer(_videoCanvas, hud, 32000, -2); Layer(_hudCanvas, hud, 32001, -1);
     }
@@ -401,17 +401,16 @@ internal sealed partial class SplitScreenView : IDisposable
     /// <summary>The followed player switched target: the banner flashes once.</summary>
     internal void PulseWatchTogether() => _bannerPulse = 0;
 
-    // The audio view's player (enlarged or orange-framed) speaking: its plate edge fades in green and flickers gently,
-    // then fades out after speech. Other views stay calm, so a full grid does not flash all over.
+    // The audio view's player (enlarged or orange-framed) speaking: its name plate fills with translucent orange that
+    // flickers gently, then fades back after speech. Other views stay calm, so a full grid does not flash all over.
     private SplitScreenKey? _audioKey;
     private void AnimateSpeaking(Tile tile, float deltaTime)
     {
         float target = _showSpeaking && !tile.Retiring && tile.Key == _audioKey && (_speaking.ContainsKey(tile.Source) || _speaking.ContainsKey(tile.Key)) ? 1 : 0;
         if (target == 0 && tile.Speak == 0) return;
         tile.Speak = Mathf.MoveTowards(tile.Speak, target, deltaTime / (target > tile.Speak ? .12f : .45f));
-        float flicker = .7f + .3f * Mathf.Sin(_clock * 12.5f);
-        var color = new Color(SpeakingEdge.r, SpeakingEdge.g, SpeakingEdge.b, tile.Speak * flicker);
-        foreach (var edge in tile.SpeakEdges) edge.color = color;
+        float flicker = .8f + .2f * Mathf.Sin(_clock * 12.5f);
+        tile.Plate.color = Color.Lerp(PlateColor, SpeakingPlate, tile.Speak * flicker);
     }
 
     /// <summary>A column of key caps at the right edge instead of rows of text; it fades out while idle.</summary>
@@ -509,7 +508,7 @@ internal sealed partial class SplitScreenView : IDisposable
     {
         int focusIndex = -1;
         for (int i = 0; i < _participants.Count; i++) if (_focused == _participants[i].Key) focusIndex = i;
-        float top = Mathf.Max(_testVisible ? SplitScreenTestToolbar.ReservedHeight(_size) : 0, LeaveVoteReserve), bottom = _deadBar.Height;
+        float top = Mathf.Max(_testVisible ? SplitScreenTestToolbar.ReservedHeight(_size) : 0, TopRowReserve), bottom = _deadBar.Height;
         // The tiled chat panel: tall, on the left like an enlarged view, the others making room beside it.
         float height = _size.y - SplitScreenLayout.Margin * 2 - top - bottom;
         float chat = _chatDocked ? Mathf.Round(Mathf.Min(height * .56f, (_size.x - SplitScreenLayout.Margin * 2) * .3f)) : 0;
@@ -691,7 +690,7 @@ internal sealed partial class SplitScreenView : IDisposable
         pulse.SetParent(decoration, false); Stretch(pulse);
         var pulseEdges = Frame4("Audio pulse ", pulse, Color.clear);
         // A compact name plate over the picture instead of a full-width bar hiding its top.
-        var plate = CreateImage("Player name background", decoration, new Color(0, 0, 0, .58f));
+        var plate = CreateImage("Player name background", decoration, PlateColor);
         TopLeft(plate.rectTransform);
         var dot = CreateImage("Audio indicator", plate.rectTransform, AudioFrame);
         dot.rectTransform.anchorMin = dot.rectTransform.anchorMax = dot.rectTransform.pivot = new Vector2(0, .5f);
@@ -771,6 +770,8 @@ internal sealed partial class SplitScreenView : IDisposable
     {
         var root = new GameObject(name, typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler));
         root.hideFlags = HideFlags.DontSave;
+        // These views belong to their module, which releases them explicitly. Scene unload may precede its stop.
+        UnityEngine.Object.DontDestroyOnLoad(root);
         var canvas = root.GetComponent<Canvas>(); canvas.renderMode = RenderMode.ScreenSpaceOverlay; canvas.sortingOrder = order;
         root.GetComponent<CanvasScaler>().uiScaleMode = CanvasScaler.ScaleMode.ConstantPixelSize;
         return canvas;

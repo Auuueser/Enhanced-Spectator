@@ -246,6 +246,8 @@ public sealed class EnhancedSpectatorNetworkService : IEnhancedSpectatorNetworkS
         return _remotePoseRegistry.TryGet(clientId, out state);
     }
 
+    internal double CameraReceivedAt(ulong clientId) => _remotePoseRegistry.ReceivedAt(clientId);
+
     /// <inheritdoc />
     public bool TryGetRemotePeerIdentity(ulong clientId, out PeerIdentityState state)
     {
@@ -780,6 +782,16 @@ public sealed class EnhancedSpectatorNetworkService : IEnhancedSpectatorNetworkS
             state,
             sampleDeltaTime);
 
+        // Models can omit unchanged target-local poses. A camera follower instead needs a complete timeline:
+        // B's stabilized world camera can move while those model-local coordinates remain unchanged.
+        if (StreamsCamera(state))
+        {
+            if (_lastObservedPoseState?.CameraTimeline != true) _nextPoseSyncTime = _runtimeState.UnscaledTime;
+            _lastObservedPoseState = _pendingPoseState = state.AsCameraTimeline();
+            _pendingPoseRefresh = true;
+            return false;
+        }
+
         if (_lastObservedPoseState != null && _lastObservedPoseState.ApproximatelyEquals(state))
         {
             if (NetworkSyncSamplingRules.ShouldRefreshUnchangedState(
@@ -885,7 +897,9 @@ public sealed class EnhancedSpectatorNetworkService : IEnhancedSpectatorNetworkS
             _pendingPoseState,
             _runtimeState.UtcNowTicks);
 
-        if (_transport.SendSpectatorPose(message, recipients, out string reason))
+        // A stream sample that only followers need, with none of them reachable from here, is handled without a send.
+        IReadOnlyList<ulong> streamTo = CameraStreamRecipients(_pendingPoseState, recipients);
+        if (streamTo.Count == 0 || _transport.SendSpectatorPose(message, streamTo, out string reason))
         {
             _lastSentPoseState = _pendingPoseState;
             _pendingPoseState = null;
@@ -1204,7 +1218,7 @@ public sealed class EnhancedSpectatorNetworkService : IEnhancedSpectatorNetworkS
             return;
         }
 
-        _remotePoseRegistry.Update(state);
+        _remotePoseRegistry.Update(state, _runtimeState.UnscaledTime);
         if (IsPoseDebugEnabled())
         {
             ModLog.Debug(
@@ -1526,10 +1540,10 @@ public sealed class EnhancedSpectatorNetworkService : IEnhancedSpectatorNetworkS
             return;
         }
 
-        IReadOnlyList<ulong> recipients = HostRelayPlanner.GetRelayRecipients(
+        IReadOnlyList<ulong> recipients = CameraStreamRecipients(state, HostRelayPlanner.GetRelayRecipients(
             _peerRegistry,
             _transport.LocalClientId,
-            state.LocalClientId);
+            state.LocalClientId));
         if (recipients.Count == 0)
         {
             return;
@@ -1989,8 +2003,46 @@ public sealed class EnhancedSpectatorNetworkService : IEnhancedSpectatorNetworkS
 
     private float GetPoseSyncInterval()
     {
-        return Mathf.Max(0.02f, _config.SpectatorPoseSyncInterval.Value);
+        float configured = Mathf.Max(0.02f, _config.SpectatorPoseSyncInterval.Value);
+        return StreamsCamera(_lastObservedPoseState) ? Mathf.Min(configured, 1 / 30f) : configured;
     }
+
+    // A camera stream (up to 30 Hz while followed) matters only to the watchers following it, directly or through a
+    // chain. Everyone else gets it at the ordinary pose cadence: in a large lobby the stream would otherwise multiply
+    // the host's upload by every connected player. A client always sends to the host, which relays.
+    private readonly Dictionary<ulong, float> _streamBroadcastAt = new Dictionary<ulong, float>();
+    private readonly List<ulong> _streamRecipients = new List<ulong>();
+    private IReadOnlyList<ulong> CameraStreamRecipients(SpectatorPoseState state, IReadOnlyList<ulong> recipients)
+    {
+        if (!state.CameraTimeline) return recipients;
+        float now = _runtimeState.UnscaledTime;
+        if (!_streamBroadcastAt.TryGetValue(state.LocalClientId, out float at) || now - at >= Mathf.Max(0.02f, _config.SpectatorPoseSyncInterval.Value))
+        {
+            _streamBroadcastAt[state.LocalClientId] = now;
+            return recipients;
+        }
+        _streamRecipients.Clear();
+        foreach (ulong id in recipients)
+            if (!_transport.IsHost && id == _transport.ServerClientId || FollowsCamera(id, state.LocalClientId)) _streamRecipients.Add(id);
+        return _streamRecipients;
+    }
+
+    private bool FollowsCamera(ulong watcher, ulong leader)
+    {
+        ulong id = watcher;
+        for (int step = 0; step < 32; step++)
+        {
+            SpectatorPoseState? pose = id == _transport.LocalClientId ? _lastObservedPoseState
+                : _remotePoseRegistry.TryGet(id, out SpectatorPoseState remote) ? remote : null;
+            if (pose is not { SplitView: SpectatorSplitView.Watching, FollowingClientId: { } next }) return false;
+            if (next == leader) return true;
+            id = next;
+        }
+        return false;
+    }
+
+    private bool StreamsCamera(SpectatorPoseState? state) => state is { HasCameraPose: true, SplitView: SpectatorSplitView.Watching, FollowingClientId: null }
+        && _remotePoseRegistry.HasCameraFollower(_transport.LocalClientId);
 
     private float GetPoseHeartbeatInterval()
     {

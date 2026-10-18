@@ -1,4 +1,5 @@
 using System;
+using EnhancedSpectator.Features.SpectatorPresence;
 using System.Collections.Generic;
 using System.Diagnostics;
 using EnhancedSpectator.Config;
@@ -11,7 +12,7 @@ using UnityEngine.InputSystem;
 
 namespace EnhancedSpectator.Features.SplitScreen;
 
-internal sealed partial class SplitScreenModule : IFeatureModule, IRuntimeTickable, IRuntimeLateTickable
+internal sealed partial class SplitScreenModule : IFeatureModule, IRuntimeTickable, IRuntimeAfterLateTickable
 {
     internal static SplitScreenModule? Current { get; private set; }
     private readonly EnhancedSpectatorConfig _config;
@@ -45,7 +46,7 @@ internal sealed partial class SplitScreenModule : IFeatureModule, IRuntimeTickab
     private bool _mirrored;
     // The camera this player had chosen before following took over theirs: given back when following ends.
     private (SpectatorCameraMode? Mode, int Style) _modeBeforeFollow;
-    private readonly Func<ulong, ulong?> _remoteFollowing;
+    private readonly Func<ulong, ulong?> _followingOf;
     private readonly HashSet<ulong> _followPath = new();
     private PreviewReturnState? _previewReturn;
     private float _nextDeath, _nextStatus;
@@ -75,6 +76,8 @@ internal sealed partial class SplitScreenModule : IFeatureModule, IRuntimeTickab
     // Frozen for the report (thawed when the report covers it), else for a resume (a scene loading as the ship lands);
     // a resume that has not come after this long gives the game's own view back.
     private bool _frozenForReport;
+    // Frozen because this player is leaving the game: held over everything until the session ends.
+    private bool _leavingFrozen;
     private float _frozenAt;
     private const float ResumeFreezeSeconds = 15, RevivedSpectateUiSeconds = 2;
 
@@ -110,12 +113,22 @@ internal sealed partial class SplitScreenModule : IFeatureModule, IRuntimeTickab
     internal bool MonitorAvailable => Find(_focused ?? _audio) is { } target && _renderer.IsIndoors(target);
     /// <summary>The enlarged view's camera as drawn: a choreography selection outdoors shows the vanilla view.</summary>
     internal SpectatorCameraMode? EffectiveMode => SelectedMode == SpectatorCameraMode.Monitor && !MonitorAvailable ? null : SelectedMode;
-    /// <summary>This player's split-screen state as published to others (a preview is local only).</summary>
+    /// <summary>The player in the live large view (its voice group), as the game's client id; none tiled or outside.</summary>
+    internal static ulong? LocalWatching => Current is { Active: true, Preview: false, _focused: { } focused } ? focused.ClientId : null;
+    /// <summary>The published voice/model group; waiting for an automatic large-view handoff does not join the audience.</summary>
     internal static Networking.SpectatorSplitView LocalView => Current is { Active: true, Preview: false } module
-        ? module.LargeViewOpen ? Networking.SpectatorSplitView.Watching : Networking.SpectatorSplitView.Audience
+        ? module.ListeningView
         : Networking.SpectatorSplitView.None;
+    private Networking.SpectatorSplitView ListeningView => LargeViewOpen || _focusPending
+        ? Networking.SpectatorSplitView.Watching : Networking.SpectatorSplitView.Audience;
     /// <summary>A view is enlarged (whatever its camera, vanilla included).</summary>
     internal bool LargeViewOpen => _focused.HasValue;
+    /// <summary>
+    /// One player is left alive: every dead spectator watches them, so their view is always the large one (it is
+    /// not returned to the tiles) and the dead all share one voice group (see SplitScreenPresenceRules).
+    /// </summary>
+    internal bool LastOneLeft => Active && _players.Count == 1 && !_takeoff;
+    internal static bool LiveLastOneLeft => Current is { Active: true, Preview: false } module && module.LastOneLeft;
     internal void SelectViewMode(SpectatorCameraMode? mode) => SelectMode(mode);
     internal void SelectViewStyle(int style)
     {
@@ -149,7 +162,11 @@ internal sealed partial class SplitScreenModule : IFeatureModule, IRuntimeTickab
     /// A mod peer's camera as presented here (their pose resolved locally), the kind of camera it is (null for the
     /// game's own view) with its choreography style, and the view it shows.
     /// </summary>
-    internal Func<ulong, (Vector3 Position, Quaternion Rotation, SpectatorCameraMode? Mode, int Style, SplitScreenKey? Target, float FieldOfView)?>? RemoteCamera { get; set; }
+    internal Func<ulong, (SpectatorCameraSample Camera, SpectatorCameraMode? Mode, int Style, SplitScreenKey? Target)?>? RemoteCamera { get; set; }
+
+    // Once per completed frame, after any split-screen pose/mirroring and before drawing. Also runs without live
+    // split-screen views, when the ordinary spectator camera has already been solved by SpectatorModule.
+    internal Action? CameraPoseReady { get; set; }
     /// <summary>Whether a client runs Enhanced Spectator (completed handshake).</summary>
     internal Func<ulong, bool>? IsModPeer { get; set; }
     /// <summary>Another overlay above the views (the emote picker) that owns clicks at this point.</summary>
@@ -177,7 +194,8 @@ internal sealed partial class SplitScreenModule : IFeatureModule, IRuntimeTickab
         RebuildHints();
     }
     internal SplitScreenModule(EnhancedSpectatorConfig config)
-    { _config = config; _renderer = new LethalCompanySplitScreenRenderAdapter(config); _remoteFollowing = id => RemoteSplit?.Invoke(id).Following; }
+    { _config = config; _renderer = new LethalCompanySplitScreenRenderAdapter(config);
+        _followingOf = id => id == LocalClientId() ? LocalFollowingId() : RemoteSplit?.Invoke(id).Following; }
     public void Initialize() { Current = this; }
     internal void RequestToggle() => _toggleRequested = true;
     internal void RequestPreview() => _previewRequested = true;
@@ -189,8 +207,18 @@ internal sealed partial class SplitScreenModule : IFeatureModule, IRuntimeTickab
     public void Tick()
     {
         var context = _game.Read();
+        // Disconnect owns the retained picture until the menu, even if NGO has already removed the local player.
+        // An earlier scene/camera freeze is promoted to this same owner without borrowing the renderer again.
+        if (_config.EnableEnhancedSpectator.Value && context.Leaving && !Preview && (Active || _frozen))
+        { _leavingFrozen = true; Stop(true); return; }
         if (_session != context.Session)
-        { HideReport(); FinishPreview(false); Stop(); LethalCompanyRoundResults.Clear(); _session = context.Session; _autoConsumed = _resume = false; }
+        {
+            HideReport(); FinishPreview(false); Stop();
+            // Persistent roots survive scene teardown only until their session owner releases them. Recreate them
+            // with the next game's HUD font, while preserving them through moon transitions within one session.
+            _view?.Dispose(); _view = null; _textWarmed = false;
+            LethalCompanyRoundResults.Clear(); _session = context.Session; _autoConsumed = _resume = false;
+        }
         // Revival can occur while the scene-transition guard still blocks the rest of this tick.
         if (!context.Dead) _autoConsumed = _resume = false;
         // Built ahead (hidden) once in a game, so the first death only starts it: building its canvases, texts and
@@ -198,8 +226,15 @@ internal sealed partial class SplitScreenModule : IFeatureModule, IRuntimeTickab
         if (_view == null && context.Session != 0 && _config.EnableEnhancedSpectator.Value && LethalCompanySplitScreenState.Font != null) EnsureView();
         if (!_config.EnableEnhancedSpectator.Value)
         { _resume = false; HideReport(); FinishPreview(false); Stop(); return; }
+        // Leaving the game (quitting, or the host gone): the last picture stays over everything, the menu included,
+        // until the main menu has loaded and the session ends; the game's own view never shows through meanwhile.
+        if (context.Leaving)
+        {
+            if (Preview) FinishPreview(false);
+            return;
+        }
         if (Active && !Preview && context.ShipLeaving && _config.Camera.SplitScreen.StyledReport.Value) _reportArmed = true;
-        if (_frozen && (!context.Dead || (_frozenForReport ? !context.ShipLeaving : !_resume || Time.unscaledTime - _frozenAt > ResumeFreezeSeconds))) Thaw();
+        if (_frozen && !_leavingFrozen && (!context.Dead || (_frozenForReport ? !context.ShipLeaving : !_resume || Time.unscaledTime - _frozenAt > ResumeFreezeSeconds))) Thaw();
         if (!RuntimeConnectionState.CanRunLocalDiagnostics(out _))
         { bool freeze = Freezes(context); if (Active && !Preview) Interrupt(context); FinishPreview(false); Stop(freeze); return; }
         // Alive in an enabled, usable session: compile the first opening's code, then prepare its hint glyphs.
@@ -235,9 +270,12 @@ internal sealed partial class SplitScreenModule : IFeatureModule, IRuntimeTickab
             if (_reportPreviewAt >= 0)
             {
                 if (Time.unscaledTime - _reportPreviewAt > .3f && Mouse.current?.leftButton.wasPressedThisFrame == true) _report!.Close();
+                // It starts with the menu (and pointer) closed: ESC opening the menu again ends it, as it ends the demo.
+                if (!context.MenuOpen) _reportPreviewEscArmed = true;
+                else if (_reportPreviewEscArmed) { _reportPreviewEscArmed = false; _report!.Close(); }
                 return;
             }
-            if (context.MenuOpen) HandlePointer(); else if (!DemoRunning) { _view?.SetHover(null); _view?.SetViewersHover(false); }
+            if (context.MenuOpen) HandlePointer(); else if (!DemoRunning) { _view?.SetHover(null); _view?.SetViewersHover(false); _view?.SetDeadHover(null); }
             if (TryReadModeKey(out var mode)) SelectMode(mode);
             if (SpectatorInputService.IsKeyPressedThisFrame(_config.Camera.ToggleHudKey.Value)) _previewHudVisible = !_previewHudVisible;
             if (SpectatorInputService.IsKeyPressedThisFrame(_config.Camera.SplitScreen.PreviewPanelKey.Value))
@@ -329,18 +367,23 @@ internal sealed partial class SplitScreenModule : IFeatureModule, IRuntimeTickab
         _view.SetSize(new Vector2(Screen.width, Screen.height));
     }
 
-    public void LateTick()
+    public void AfterLateTick()
     {
         long started = Stopwatch.GetTimestamp();
         ReportSpike();
         var context = _game.Read();
         LethalCompanyChat.PreviewPresents = false;
-        TickReport(context);
-        TickViews(context);
+        // Report settings and report completion cannot thaw a picture now owned by disconnect.
+        bool drawViews = false;
+        if (!_leavingFrozen) { TickReport(context); drawViews = PrepareViews(context); }
+        CameraPoseReady?.Invoke();
+        if (drawViews) DrawViews(context);
         if (_frozen)
         {
-            _view!.SetBeneath(context.GameUiOpen ? LethalCompanySplitScreenState.HudCanvas : null);
-            LethalCompanySplitScreenUiPresentation.MenuOver = context.GameUiOpen && !LethalCompanySplitScreenUiPresentation.ReportOwned;
+            bool beneath = context.GameUiOpen && !_leavingFrozen;
+            _view!.SetBeneath(beneath ? LethalCompanySplitScreenState.HudCanvas : null);
+            if (_leavingFrozen) { _report?.SetBeneath(null); LethalCompanySplitScreenUiPresentation.ReportBeneath = false; }
+            LethalCompanySplitScreenUiPresentation.MenuOver = beneath && !LethalCompanySplitScreenUiPresentation.ReportOwned;
         }
         // Use the final canvas state, including any renderer stop or early return during this update.
         // The report can keep drawing beneath the HUD after the view renderer has released its resources.
@@ -376,10 +419,10 @@ internal sealed partial class SplitScreenModule : IFeatureModule, IRuntimeTickab
         _spikeUiMs = _spikePoseMs = _spikeSceneMs = _spikeCleanupMs = 0;
     }
 
-    private void TickViews(SplitScreenSessionContext context)
+    private bool PrepareViews(SplitScreenSessionContext context)
     {
         long phaseStarted = Stopwatch.GetTimestamp();
-        if (!Active) return;
+        if (!Active) return false;
         if (Preview && _previewSuspended)
         {
             // Closed with the split-screen key: nothing renders; the toolbar says how to reopen.
@@ -387,7 +430,7 @@ internal sealed partial class SplitScreenModule : IFeatureModule, IRuntimeTickab
                 : "Split-screen closed · press " + SpectatorHotkeySettings.KeyLabel(_config.Camera.SplitScreen.ToggleKey.Value) + " to reopen",
                 _config.UseChineseText, _players.Count, _population.Playing, _presetText, _focused ?? _audio,
                 PreviewModeIndex(), _previewHudVisible, _config.Camera.MonitorInfrared.Value, _previewSpeaking, _population.Audience, _demoCaptions);
-            return;
+            return false;
         }
         if (DemoRunning) TickDemo(context);
         if (Preview)
@@ -404,8 +447,8 @@ internal sealed partial class SplitScreenModule : IFeatureModule, IRuntimeTickab
         else
         {
             _game.CopyLivingPlayersTo(_players, false);
-            if (!context.Eligible) { bool freeze = Freezes(context); Interrupt(context); Stop(freeze); return; }
-            if (_players.Count == 0 && !context.AllDead && !context.GameOverCamera) { Stop(); return; }
+            if (!context.Eligible) { bool freeze = Freezes(context); Interrupt(context); Stop(freeze); return false; }
+            if (_players.Count == 0 && !context.AllDead && !context.GameOverCamera) { Stop(); return false; }
             // The ship taking off, seen from outside as the game shows it: with the whole crew dead, and also when it
             // leaves early (vote) or at midnight with living crew aboard. One view of it, as for the dead crew.
             bool takeoff = _players.Count == 0 || context.GameOverCamera;
@@ -431,8 +474,10 @@ internal sealed partial class SplitScreenModule : IFeatureModule, IRuntimeTickab
         // With a menu or the chat open the views draw beneath the game HUD: of it only the menu and chat (and the
         // dialogue and game-over texts) draw then, not its clock, spectator UI or other mods' boxes there.
         LethalCompanySplitScreenUiPresentation.MenuOver = !Preview && !covered && overlay && !gameReport;
-        if (covered) return;
-        if (_focused.HasValue && !Contains(_focused.Value)) _focused = null;
+        if (covered) return false;
+        // The large view's player gone (dead): the player heard next takes the large view, once the game has moved
+        // its spectating on to them.
+        if (_focused.HasValue && !Contains(_focused.Value)) { _focused = null; _focusPending = !_takeoff && !_watchWith.HasValue; }
         // The default layout puts the watched player in the large view beside the others.
         if (_focusPending && _audio.HasValue && Contains(_audio.Value)) { _focusPending = false; Focus(_audio); }
         // The last player left fills the screen with the travelling camera.
@@ -483,6 +528,10 @@ internal sealed partial class SplitScreenModule : IFeatureModule, IRuntimeTickab
                         _config.UseChineseText ? "测试玩家" : "Preview player", 0, true));
             }
             else _game.CopyDeadPlayersTo(_dead);
+            ulong? localLeader = !Preview && LocalClientId() is { } local
+                ? SpectatorPresence.SpectatorPartyRules.Leader(local, _followingOf) : (ulong?)null;
+            // Disabling routed ghost voice restores vanilla playback, including other dead spectators.
+            bool voiceGroups = Preview || _config.EnableSpectatorVoiceToTarget.Value && !_config.Camera.GhostVoiceMuted.Value;
             // Each audience member's split state and current target: synced for mod peers, our own for us; preview
             // identities watch a preview view so watching together can be tried alone. With every view tiled a
             // spectator still watches (the orange audio view) from the audience, without standing by that player.
@@ -492,7 +541,7 @@ internal sealed partial class SplitScreenModule : IFeatureModule, IRuntimeTickab
                 // Every fourth preview audience member stands in for a player without the mod.
                 bool enhanced = Preview ? entry.Key.SlotId % 4 != 3 : entry.Local || IsModPeer?.Invoke(entry.Source.ClientId) == true;
                 (Networking.SpectatorSplitView View, ulong? Following) member = !enhanced ? (Networking.SpectatorSplitView.None, (ulong?)null)
-                    : entry.Local ? (_focused.HasValue ? Networking.SpectatorSplitView.Watching : Networking.SpectatorSplitView.Audience, LocalFollowingId())
+                    : entry.Local ? (ListeningView, LocalFollowingId())
                     : Preview ? (Networking.SpectatorSplitView.Watching, (ulong?)null)
                     : RemoteSplit?.Invoke(entry.Source.ClientId) ?? (Networking.SpectatorSplitView.None, (ulong?)null);
                 SplitScreenKey? watching = !enhanced ? null
@@ -500,10 +549,21 @@ internal sealed partial class SplitScreenModule : IFeatureModule, IRuntimeTickab
                     : Preview ? (_players.Count > 0 ? _players[(int)(entry.Key.SlotId % (ulong)_players.Count)].Key : null)
                     : RemoteTarget?.Invoke(entry.Source.ClientId);
                 string watchingName = watching.HasValue && Find(watching) is { } target ? target.Name : string.Empty;
+                // Greyed out: not heard by us under the voice rules (a large view's other watchers, or from the
+                // audience those watching a large view); with one player left everyone is.
+                // Preview keys distinguish virtual people sharing one real source; live groups use the same
+                // watched client and complete follow chain as the voice routing service.
+                bool group = Preview
+                    ? watching.HasValue && watching == _focused || LocalFollowingId() is { } followed && followed == entry.Source.ClientId
+                    : SpectatorPresence.SplitScreenPresenceRules.SameGroup(_focused?.ClientId, watching?.ClientId,
+                        localLeader.HasValue && SpectatorPresence.SpectatorPartyRules.Leader(entry.Source.ClientId, _followingOf) == localLeader.Value);
+                bool apart = voiceGroups && !entry.Local && SpectatorPresence.SplitScreenPresenceRules.Voice(member.View,
+                    ListeningView, group, LastOneLeft)
+                    == SpectatorPresence.SplitVoiceRoute.Muted;
                 _dead[i] = new SplitScreenDeadPlayer(entry.Key, entry.Source, entry.Name, entry.SteamId, entry.Local, watching, watchingName, enhanced,
                     member.View, member.Following.HasValue ? DeadName(member.Following.Value) : string.Empty,
                     !entry.Local && member.Following.HasValue && member.Following == LocalClientId(),
-                    !entry.Local && !Preview && HasWatchCycle(entry.Source.ClientId));
+                    !entry.Local && !Preview && HasWatchCycle(entry.Source.ClientId), apart);
             }
             _voices.Clear();
             foreach (var player in _players) if (_game.VoiceLevel(player.Source) is var level && level > 0) _voices.Add((player.Source, level));
@@ -543,7 +603,8 @@ internal sealed partial class SplitScreenModule : IFeatureModule, IRuntimeTickab
         var primary = Find(_audio);
         _renderer.BindPrimary(primary, _focused.HasValue && _focused == _audio);
         _renderer.UpdatePrimaryPose();
-        _renderer.MirrorPrimaryPose(MirrorPose(), _watchWith.HasValue);
+        _renderer.MirrorPrimaryPose(MirrorPose(), !_watchWith.HasValue ? Networking.SpectatorSplitView.None
+            : _mirrorFrom.HasValue ? Networking.SpectatorSplitView.Watching : Networking.SpectatorSplitView.Audience);
         if (_focused.HasValue)
         {
             if (_preferredMode != _renderer.PrimaryMode || _preferredStyle != _config.Camera.MonitorStyle.Value)
@@ -551,14 +612,18 @@ internal sealed partial class SplitScreenModule : IFeatureModule, IRuntimeTickab
             _preferredMode = _renderer.PrimaryMode; _preferredStyle = _config.Camera.MonitorStyle.Value;
         }
         _spikePoseMs = (Stopwatch.GetTimestamp() - phaseStarted) * 1000.0 / Stopwatch.Frequency;
+        return true;
+    }
+
+    private void DrawViews(SplitScreenSessionContext context)
+    {
         var c = _config.Camera.SplitScreen;
         var budget = SplitScreenRenderBudget.Resolve(c.Quality.Value, _players.Count, c.MainScale.Value, c.MainFps.Value, c.TileScale.Value, c.TileFps.Value,
             c.MainFollowsGame.Value);
         _metrics.Frame(Time.unscaledDeltaTime);
         _draws.Clear();
-        phaseStarted = Stopwatch.GetTimestamp();
+        long phaseStarted = Stopwatch.GetTimestamp();
         _renderer.SetTileShadowCascades(budget.TileCascades);
-        _renderer.FollowShip();
         _renderer.RefreshVisibleRooms(_players);
         _spikeSceneMs = (Stopwatch.GetTimestamp() - phaseStarted) * 1000.0 / Stopwatch.Frequency;
         var main = _takeoff ? ShipKey : _focused;
@@ -571,7 +636,7 @@ internal sealed partial class SplitScreenModule : IFeatureModule, IRuntimeTickab
         foreach (var key in _draws)
         {
             var player = Find(key);
-            if (!player.HasValue || !_view.TryGetTargetSize(key, out var size)) continue;
+            if (!player.HasValue || !_view!.TryGetTargetSize(key, out var size)) continue;
             SplitScreenRenderBudget.Size(size.y, key == main ? budget.MainScale : budget.TileScale, out int width, out int height);
             var before = _renderer.GetTexture(key);
             bool newSize = before == null || before.width != width || before.height != height;
@@ -590,7 +655,7 @@ internal sealed partial class SplitScreenModule : IFeatureModule, IRuntimeTickab
             if (cost * 1000 > _spikeRenderMs) { _spikeRenderMs = cost * 1000; _spikeWidth = width; _spikeHeight = height; _spikeNewSize = newSize; }
             if (texture != null) { _view.SetTexture(key, texture, transition); _crossfade.Remove(key); _metrics.Rendered(key); }
         }
-        _view.SetPrimaryTransitionOpacity(_renderer.PrimaryTransitionOpacity);
+        _view!.SetPrimaryTransitionOpacity(_renderer.PrimaryTransitionOpacity);
         phaseStarted = Stopwatch.GetTimestamp();
         _renderer.CollectRetiredTextures(_view.ReferencesTexture);
         _spikeCleanupMs += (Stopwatch.GetTimestamp() - phaseStarted) * 1000.0 / Stopwatch.Frequency;
@@ -623,7 +688,7 @@ internal sealed partial class SplitScreenModule : IFeatureModule, IRuntimeTickab
     {
         var mouse = Mouse.current;
         if (_view == null) return;
-        if (mouse == null || (!Preview && !SpectatorPointerCapture.IsActive)) { _view.SetHover(null); _view.SetViewersHover(false); return; }
+        if (mouse == null || (!Preview && !SpectatorPointerCapture.IsActive)) { _view.SetHover(null); _view.SetViewersHover(false); _view.SetDeadHover(null); return; }
         Vector2 point = mouse.position.ReadValue();
         if (Preview && _view.HandleTestPointer(point, mouse.leftButton.wasPressedThisFrame)) { _view.SetHover(null); _view.SetViewersHover(false); return; }
         // The watch roster and emote picker above the views handle their own clicks.
@@ -702,7 +767,7 @@ internal sealed partial class SplitScreenModule : IFeatureModule, IRuntimeTickab
         {
             // Tiled with them, and their audio view becomes our orange one.
             var listening = leader.Value.Watching;
-            bool moved = _focused.HasValue || listening.HasValue && Contains(listening.Value) && _audio != listening;
+            bool moved = _focused.HasValue && !LastOneLeft || listening.HasValue && Contains(listening.Value) && _audio != listening;
             _watchTarget = null;
             if (listening.HasValue && Contains(listening.Value)) _audio = listening;
             if (moved) { Focus(null); _view.PulseWatchTogether(); }
@@ -725,19 +790,19 @@ internal sealed partial class SplitScreenModule : IFeatureModule, IRuntimeTickab
     }
 
     // The camera of the chain's end (a follower's own camera is not what it shows), once it shows our large view.
-    private (Vector3 Position, Quaternion Rotation, SpectatorCameraMode? Mode, int Style, SplitScreenKey? Target, float FieldOfView)? FollowedCamera()
+    private (SpectatorCameraSample Camera, SpectatorCameraMode? Mode, int Style, SplitScreenKey? Target)? FollowedCamera()
     {
         if (!_mirrorFrom.HasValue || !_focused.HasValue || _watchTarget != _focused) return null;
-        var camera = RemoteCamera?.Invoke(SpectatorPresence.SpectatorPartyRules.Leader(_mirrorFrom.Value, _remoteFollowing));
+        var camera = RemoteCamera?.Invoke(SpectatorPresence.SpectatorPartyRules.Leader(_mirrorFrom.Value, _followingOf));
         return camera?.Target == _focused ? camera : null;
     }
 
-    // Every frame: their poses arrive a few times a second, and the renderer eases between them.
-    private (Vector3 Position, Quaternion Rotation, float FieldOfView)? MirrorPose()
+    // Every frame: the renderer plays the sender's completed camera samples on a continuous timeline.
+    private SpectatorCameraSample? MirrorPose()
     {
         if (FollowedCamera() is not { } camera) return null;
         _mirrored = true;
-        return (camera.Position, camera.Rotation, camera.FieldOfView);
+        return camera.Camera;
     }
 
     // Concurrent follow clicks can form a loop after our first click. Recheck the published chain at each
@@ -770,6 +835,10 @@ internal sealed partial class SplitScreenModule : IFeatureModule, IRuntimeTickab
     private void Focus(SplitScreenKey? key)
     {
         if (key.HasValue && (!Contains(key.Value) || _takeoff)) return;
+        // The last player left is not returned to the tiles: tiled or enlarged, theirs would be the one view.
+        if (!key.HasValue && LastOneLeft) key = _players[0].Key;
+        // A layout chosen now (a click, following someone) replaces a large-view handoff still waiting for its player.
+        _focusPending = false;
         if (_focused.HasValue) { _crossfade.Add(_focused.Value); _schedule.Invalidate(_focused.Value); }
         if (_focused != key) { _view?.WakeKeyHints(); _layoutChangedAt = Time.unscaledTime; }
         _focused = key;
@@ -857,7 +926,8 @@ internal sealed partial class SplitScreenModule : IFeatureModule, IRuntimeTickab
         _focusPending = false;
         _game.CopyLivingPlayersTo(_players, false);
         _audio = _game.Read().Target;
-        if (saved.Focused.HasValue && Contains(saved.Focused.Value)) Focus(saved.Focused);
+        // A large view whose player died meanwhile resumes on the player heard now.
+        if (saved.Focused.HasValue) { if (Contains(saved.Focused.Value)) Focus(saved.Focused); else _focusPending = true; }
         _pointerRequested = saved.Pointer;
     }
 
@@ -891,6 +961,7 @@ internal sealed partial class SplitScreenModule : IFeatureModule, IRuntimeTickab
 
     private void Thaw()
     {
+        _leavingFrozen = false;
         if (!_frozen) return;
         _frozen = false;
         LethalCompanySplitScreenUiPresentation.MenuOver = false;
@@ -901,13 +972,20 @@ internal sealed partial class SplitScreenModule : IFeatureModule, IRuntimeTickab
     private void Stop() => Stop(false);
     private void Stop(bool freeze)
     {
-        if (Active && !Preview && _reportArmed && _report?.Visible != true)
+        if (!Active) return;
+        var stoppedIn = _game.Read();
+        // Input ownership ends before graphics cleanup. A main menu has already installed its own cursor in Awake;
+        // do not restore the cursor saved in gameplay over it, even if the native shutdown window was missed.
+        LethalCompanySpectatorRosterCursor.Shared.Release(stoppedIn.Session == 0 || stoppedIn.InputBlocked);
+        LethalCompanySpectatorRosterCursor.SplitScreenOwnsInput = false;
+        SpectatorVanillaInputGuard.SplitScreenActive = false;
+        Active = false;
+        if (!Preview && _reportArmed && _report?.Visible != true)
         {
             // The scene unload will destroy the per-view textures before FillEndGameStats runs.
             var still = LastViewTexture();
             if (still != null) { EnsureReport(); _report!.CaptureBackdrop(still); }
         }
-        if (!Active) return;
         if (freeze)
         {
             // Over everything (the game's HUD too), as it was last drawn; its textures stay until the thaw.
@@ -916,14 +994,10 @@ internal sealed partial class SplitScreenModule : IFeatureModule, IRuntimeTickab
         else { Thaw(); _view?.SetVisible(false); _view?.Clear(); _view?.CopyCompletedRetirementsTo(_retired); _renderer.Restore(); }
         // Releasing cameras does not release a surface still hidden for the report's menu/chat handoff.
         if (_report?.DrawsBeneathHud != true) _game.HudCanvasBeneath(false);
-        SpectatorVanillaInputGuard.SplitScreenActive = false;
-        var stoppedIn = _game.Read();
-        LethalCompanySpectatorRosterCursor.Shared.Release(stoppedIn.InputBlocked);
         // Closed by a revive: the game's spectating UI, fading out with its death screen, is not shown meanwhile.
-        if (!Preview && !stoppedIn.Dead) LethalCompanySplitScreenUiPresentation.HideSpectateUiUntil = Time.unscaledTime + RevivedSpectateUiSeconds;
-        LethalCompanySpectatorRosterCursor.SplitScreenOwnsInput = false;
+        if (!Preview && stoppedIn.Session != 0 && !stoppedIn.Dead) LethalCompanySplitScreenUiPresentation.HideSpectateUiUntil = Time.unscaledTime + RevivedSpectateUiSeconds;
         if (DemoRunning) ReleaseDemo();
-        Active = Preview = false; _focused = _audio = null; _votePreviewAt = -1; _population.Playing = false; _watchWith = _watchTarget = null; _mirrorFrom = null; _mirrored = false; _takeoff = false;
+        Preview = false; _focused = _audio = null; _votePreviewAt = -1; _population.Playing = false; _watchWith = _watchTarget = null; _mirrorFrom = null; _mirrored = false; _takeoff = false;
         LethalCompanySplitScreenUiPresentation.Takeoff = LethalCompanySplitScreenUiPresentation.MenuOver = false;
         if (_reportPreviewAt >= 0) HideReport();
         _players.Clear(); _sources.Clear(); _schedule.Clear(); _crossfade.Clear();
@@ -960,6 +1034,8 @@ internal sealed partial class SplitScreenModule : IFeatureModule, IRuntimeTickab
         if (!Preview && !_config.Camera.SplitScreen.StyledReport.Value) { HideReport(); return; }
         if (_report == null || !_report.Visible)
         {
+            // A preview report that ran to its end brings the menu (pointer and toolbar) back; ESC already did.
+            if (_reportPreviewAt >= 0 && Preview && !context.MenuOpen) _game.TogglePreviewPointer();
             _reportPreviewAt = -1;
             LethalCompanySplitScreenUiPresentation.ReportOwned = LethalCompanySplitScreenUiPresentation.ReportBeneath = false;
             if (_reportArmed && !context.ShipLeaving && !LethalCompanyRoundResults.Open) HideReport();
@@ -1025,10 +1101,14 @@ internal sealed partial class SplitScreenModule : IFeatureModule, IRuntimeTickab
         _reportData.FillPreview(_reportPeople, LethalCompanyRoundResults.PlanetName, _config.UseChineseText);
         OpenReport();
         _reportPreviewAt = Time.unscaledTime; _previewMusic = _previewLevelUp = _previewLevelDrop = _previewLevelDown = false;
+        // A clean screen, as for the demo: the menu (and its pointer) closes; ESC reopens it and ends the report.
+        _reportPreviewEscArmed = false;
+        if (_game.Read().MenuOpen) _game.TogglePreviewPointer();
     }
 
     // The preview's early-leave vote, in the game's order: the prompt, this player's three-second hold and vote, the
     // others' votes (one a second, quicker for a crowd; one per view, at least two), then the departure for a while.
+    private bool _reportPreviewEscArmed;
     private float _votePreviewAt = -1;
     private const float VotePreviewHoldAt = .6f, VotePreviewHoldSeconds = 3, VotePreviewDepartureSeconds = 4;
     private SplitScreenLeaveVoteState PreviewLeaveVote()

@@ -10,7 +10,7 @@ namespace EnhancedSpectator.Features.FloatingHead;
 /// </summary>
 public sealed class FloatingHeadModule :
     IFeatureModule,
-    IRuntimeLateTickable,
+    IRuntimeAfterLateTickable,
     IRuntimeCameraPreCullTickable,
     IRuntimeGuiTickable
 {
@@ -38,7 +38,7 @@ public sealed class FloatingHeadModule :
     }
 
     /// <inheritdoc />
-    public void LateTick()
+    public void AfterLateTick()
     {
         if (!_initialized)
         {

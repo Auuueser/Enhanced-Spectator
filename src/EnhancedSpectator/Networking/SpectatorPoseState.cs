@@ -39,7 +39,9 @@ public sealed class SpectatorPoseState
         bool hasCameraPose = false,
         Vector3 cameraLocalPosition = default,
         Quaternion cameraLocalRotation = default,
-        float cameraFieldOfView = 0)
+        float cameraFieldOfView = 0,
+        bool cameraTimeline = false,
+        Vector3? cameraPivotOffset = null)
     {
         IsSpectating = isSpectating;
         LocalClientId = localClientId;
@@ -64,6 +66,23 @@ public sealed class SpectatorPoseState
         CameraStyle = cameraStyle;
         HasCameraPose = hasCameraPose; CameraLocalPosition = cameraLocalPosition;
         CameraLocalRotation = cameraLocalRotation; CameraFieldOfView = cameraFieldOfView;
+        CameraTimeline = cameraTimeline;
+        HasCameraPivot = cameraPivotOffset.HasValue; CameraPivotOffset = cameraPivotOffset ?? default;
+    }
+
+    /// <summary>
+    /// The game's own spectate camera turns around a pivot on the watched player that sways with their walk: its offset
+    /// from the player (world axes) when this sample was taken, so a follower anchors that camera to the same sway.
+    /// </summary>
+    public bool HasCameraPivot { get; }
+    /// <summary>The pivot's offset from the watched player's root (world axes); see <see cref="HasCameraPivot"/>.</summary>
+    public Vector3 CameraPivotOffset { get; }
+
+    /// <summary>This camera is being published as completed-frame timeline samples for watch-together playback.</summary>
+    public bool CameraTimeline { get; private set; }
+    internal SpectatorPoseState AsCameraTimeline()
+    {
+        var copy = (SpectatorPoseState)MemberwiseClone(); copy.CameraTimeline = true; return copy;
     }
 
     /// <summary>The optional rendered camera pose, separate from the ghost/voice position.</summary>
@@ -100,7 +119,10 @@ public sealed class SpectatorPoseState
     /// <summary>Temporarily hide this spectator's model; pose and voice routing remain valid.</summary>
     public bool ModelStowed { get; }
 
-    /// <summary>Sender camera is in idle centering; receivers decide whether to show its model.</summary>
+    /// <summary>
+    /// The sender is idle: no deliberate camera operation for the idle wait, in any camera and whatever its recentring
+    /// option (older versions: its camera is recentring). Receivers decide whether to show its model.
+    /// </summary>
     public bool AutoCentering { get; }
 
     /// <summary>
@@ -175,6 +197,7 @@ public sealed class SpectatorPoseState
             || CameraMode != other.CameraMode
             || CameraStyle != other.CameraStyle
             || HasCameraPose != other.HasCameraPose
+            || CameraTimeline != other.CameraTimeline
             || LocalClientId != other.LocalClientId
             || LocalPlayerSlotId != other.LocalPlayerSlotId
             || TargetClientId != other.TargetClientId

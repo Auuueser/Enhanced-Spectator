@@ -17,6 +17,15 @@ internal sealed class SplitScreenPlayerBodyScope
     private Camera? _camera;
     private LODGroup? _lods;
     private int _mask;
+    // The first-person helmet the gameplay camera looks out through sits on the living player's head: seen from
+    // outside it is a second, larger head around theirs (camera mods that switch the visor off hide it).
+    private readonly List<Renderer> _visor = new List<Renderer>();
+    // The living player's held item hangs on the first-person arms' hand in front of the camera, not on the body's hand
+    // other players see: in their own third-person view it floated ahead of them. For the render it is placed on the
+    // body's hand the way the game places other players' items, then put back.
+    private Transform? _item;
+    private Vector3 _itemPosition;
+    private Quaternion _itemRotation;
 
     internal void Begin(PlayerControllerB player, Camera camera)
     {
@@ -27,6 +36,19 @@ internal sealed class SplitScreenPlayerBodyScope
         Borrow(player.thisPlayerModelLOD1, false);
         Borrow(player.thisPlayerModelLOD2, false);
         Borrow(player.thisPlayerModelArms, false);
+        if (player.localVisor != null)
+        {
+            player.localVisor.GetComponentsInChildren(true, _visor);
+            foreach (var renderer in _visor) Borrow(renderer, false);
+        }
+        var held = player.currentlyHeldObjectServer;
+        if (held != null && held.parentObject == player.localItemHolder && player.serverItemHolder != null)
+        {
+            _item = held.transform; _itemPosition = _item.position; _itemRotation = _item.rotation;
+            var hand = player.serverItemHolder;
+            _item.SetPositionAndRotation(hand.position + hand.rotation * held.itemProperties.positionOffset,
+                hand.rotation * Quaternion.Euler(held.itemProperties.rotationOffset));
+        }
         _lods = player.thisPlayerModel != null ? player.thisPlayerModel.GetComponentInParent<LODGroup>() : null;
         if (_lods != null) _lods.ForceLOD(0);
     }
@@ -47,6 +69,8 @@ internal sealed class SplitScreenPlayerBodyScope
             entry.renderer.shadowCastingMode = entry.shadows;
         }
         _saved.Clear();
+        if (_item != null) _item.SetPositionAndRotation(_itemPosition, _itemRotation);
+        _item = null;
         if (_lods != null) _lods.ForceLOD(-1);
         _lods = null;
         if (_camera != null) _camera.cullingMask = _mask;

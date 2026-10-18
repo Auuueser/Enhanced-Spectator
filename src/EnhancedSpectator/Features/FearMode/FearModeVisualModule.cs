@@ -6,7 +6,7 @@ namespace EnhancedSpectator.Features.FearMode;
 /// <summary>
 /// Runtime module for validated fear visuals.
 /// </summary>
-public sealed class FearModeVisualModule : IFeatureModule, IRuntimeLateTickable
+public sealed class FearModeVisualModule : IFeatureModule, IRuntimeAfterLateTickable
 {
     private readonly FearModeVisualService _service;
     private bool _initialized;
@@ -24,7 +24,7 @@ public sealed class FearModeVisualModule : IFeatureModule, IRuntimeLateTickable
     }
 
     /// <inheritdoc />
-    public void LateTick()
+    public void AfterLateTick()
     {
         if (_initialized)
         {

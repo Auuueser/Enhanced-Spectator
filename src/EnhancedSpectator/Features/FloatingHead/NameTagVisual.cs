@@ -145,8 +145,9 @@ public sealed class NameTagVisual : IDisposable
         _icon.enabled = opacity > 0;
         if (opacity <= 0) return;
         // Beside the name as laid out now (names change), as tall as a capital letter whatever the line count (the
-        // fallback-ID label has two). TextMeshPro's world em is a tenth of its font size.
-        var bounds = _renderer.localBounds;
+        // fallback-ID label has two). TextMeshPro's world em is a tenth of its font size. The laid-out text's bounds,
+        // not the renderer's: characters from a fallback font (Chinese names) are drawn by sub-meshes outside it.
+        var bounds = _text.textBounds;
         float height = _text.fontSize * .07f, width = height * _iconAspect;
         _icon.transform.localPosition = new Vector3(bounds.max.x + height * .3f + width * .5f, bounds.center.y, 0);
         _icon.transform.localScale = new Vector3(width, height, 1);

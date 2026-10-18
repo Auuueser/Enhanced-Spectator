@@ -111,6 +111,9 @@ public interface IGameSpectatedTargetMotionReferenceAdapter
         ulong? targetClientId,
         ulong? targetPlayerSlotId,
         out SpectatorMotionReferencePose referencePose);
+
+    /// <summary>The point the game's own spectate camera turns around on a watched player (it sways with their walk).</summary>
+    bool TryGetSpectatedTargetPivot(ulong? targetClientId, ulong? targetPlayerSlotId, out Vector3 pivot);
 }
 
 internal sealed class NoopGameSpectatorAdapter : IGameSpectatorAdapter

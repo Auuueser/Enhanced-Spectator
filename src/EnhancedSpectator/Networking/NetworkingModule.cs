@@ -8,7 +8,7 @@ namespace EnhancedSpectator.Networking;
 /// <summary>
 /// Feature module that owns Enhanced Spectator networking lifetime.
 /// </summary>
-public sealed class NetworkingModule : IFeatureModule, IRuntimeTickable
+public sealed class NetworkingModule : IFeatureModule, IRuntimeAfterLateTickable
 {
     private readonly IEnhancedSpectatorNetworkService _networkService;
     private bool _initialized;
@@ -35,7 +35,7 @@ public sealed class NetworkingModule : IFeatureModule, IRuntimeTickable
     }
 
     /// <inheritdoc />
-    public void Tick()
+    public void AfterLateTick()
     {
         if (!_initialized)
         {

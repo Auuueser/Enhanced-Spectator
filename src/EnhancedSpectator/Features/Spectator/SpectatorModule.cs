@@ -18,7 +18,7 @@ public sealed class SpectatorModule :
     ISpectatorPoseStateProvider,
     IPeerIdentityStateProvider,
     IRuntimeTickable,
-    IRuntimeLateTickable,
+    IRuntimeAfterLateTickable,
     IRuntimeCameraPreCullTickable
 {
     private readonly IGameSpectatorAdapter _gameSpectatorAdapter;
@@ -28,6 +28,7 @@ public sealed class SpectatorModule :
     private bool _lastPoseHadShipMotionReference;
     private bool _centeringHeld, _untouchedSinceDeath, _wasDead;
     private int _seenCameraMove = -1;
+    private long _poseClockOrigin;
 
     /// <summary>
     /// Creates a spectator module with a game adapter and freecam settings.
@@ -65,6 +66,7 @@ public sealed class SpectatorModule :
         }
 
         Current = _gameSpectatorAdapter.ReadSpectatorState();
+        _poseClockOrigin = DateTime.UtcNow.Ticks - (long)(Time.unscaledTimeAsDouble * TimeSpan.TicksPerSecond);
         SpectatorLifecycleEvents.Changed += OnSpectatorLifecycleChanged;
         _initialized = true;
         ModLog.Debug("Spectator freecam module initialized.");
@@ -148,8 +150,7 @@ public sealed class SpectatorModule :
             _untouchedSinceDeath &= !moved;
             // A moment without a pose (the watched player switching) keeps what was held.
             if (hasPose)
-                _centeringHeld = SpectatorAutoCenter.HoldCentering(_centeringHeld,
-                    useFreecamPose ? _freecamController.IsAutoCentering : useVanillaSpectatorPose && _freecamController.IsVanillaIdle,
+                _centeringHeld = SpectatorAutoCenter.HoldCentering(_centeringHeld, _freecamController.IsIdle,
                     splitView != SpectatorSplitView.None || _untouchedSinceDeath, moved);
             Vector3 position = Vector3.zero;
             Quaternion rotation = Quaternion.identity;
@@ -200,6 +201,11 @@ public sealed class SpectatorModule :
                     snapshot.SpectatedPlayerActualClientId,
                     snapshot.SpectatedPlayerSlotId,
                     out targetMotionReference);
+            // The game's own spectate camera sways with the watched player's walk (it turns around their spine).
+            Vector3? cameraPivotOffset = hasTargetMotionReference && !useFreecamPose
+                && ((IGameSpectatedTargetMotionReferenceAdapter)_gameSpectatorAdapter).TryGetSpectatedTargetPivot(
+                    snapshot.SpectatedPlayerActualClientId, snapshot.SpectatedPlayerSlotId, out Vector3 pivot)
+                ? pivot - targetMotionReference.Position : null;
             Vector3 targetMotionReferenceLocalPosition = hasTargetMotionReference
                 ? RemoteSpectatorMotionCompensationRules.CaptureLocalPosition(position, targetMotionReference)
                 : Vector3.zero;
@@ -215,7 +221,8 @@ public sealed class SpectatorModule :
                 hasPose ? snapshot.SpectatedPlayerSlotId : null,
                 position,
                 rotation,
-                DateTime.UtcNow.Ticks,
+                // The frame solved this camera, not the later wall time after drawing all split-screen textures.
+                _poseClockOrigin + (long)(Time.unscaledTimeAsDouble * TimeSpan.TicksPerSecond),
                 hasMotionReference,
                 motionReferenceLocalPosition,
                 motionReferenceLocalRotation,
@@ -237,7 +244,8 @@ public sealed class SpectatorModule :
                 hasCameraPose: hasPose,
                 cameraLocalPosition: Quaternion.Inverse(rotation) * (cameraPosition - position),
                 cameraLocalRotation: Quaternion.Inverse(rotation) * cameraRotation,
-                cameraFieldOfView: cameraFov);
+                cameraFieldOfView: cameraFov,
+                cameraPivotOffset: cameraPivotOffset);
             return true;
         }
 
@@ -275,13 +283,15 @@ public sealed class SpectatorModule :
     }
 
     /// <inheritdoc />
-    public void LateTick()
+    public void AfterLateTick()
     {
         if (!_initialized)
         {
             return;
         }
 
+        // The game finished moving players and its vanilla spectator camera. Do not reuse an Update snapshot.
+        _snapshotCache.Clear();
         _freecamController.LateTick();
         Refresh();
     }

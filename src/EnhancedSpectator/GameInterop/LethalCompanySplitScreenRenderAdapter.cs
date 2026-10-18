@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using EnhancedSpectator.Config;
 using EnhancedSpectator.Features.Spectator;
 using EnhancedSpectator.Features.SplitScreen;
+using EnhancedSpectator.Features.SpectatorPresence;
+using EnhancedSpectator.Networking;
 using GameNetcodeStuff;
 using UnityEngine;
 using UnityEngine.Rendering.HighDefinition;
@@ -53,12 +55,14 @@ internal sealed class LethalCompanySplitScreenRenderAdapter : IGameSplitScreenRe
     private SpectatorCameraMode _savedMode;
     private SpectatorCameraMode? _observedMode;
     private int _observedStyle, _tileCascades;
-    // The followed spectator's camera as last shown: eased toward each of their poses, which arrive a few times a second.
-    private const float MirrorSeconds = .1f;
+    // The followed spectator's completed camera timeline and the view last presented from it.
+    private readonly SpectatorCameraPlayback _cameraPlayback = new SpectatorCameraPlayback();
     private bool _mirroring;
     private Vector3 _mirrorPosition;
     private Quaternion _mirrorRotation;
     private float _mirrorFov;
+    private bool _legacyMirroring;
+    private Vector3 _legacyTargetPosition;
 
     internal LethalCompanySplitScreenRenderAdapter(EnhancedSpectatorConfig config) { _config = config; }
     public SpectatorCameraMode? PrimaryMode => _controller?.SplitScreenMode;
@@ -127,7 +131,7 @@ internal sealed class LethalCompanySplitScreenRenderAdapter : IGameSplitScreenRe
     {
         if (!_active) return;
         bool changed = _primary?.Key != participant?.Key || _primary?.Source != participant?.Source || _focused != focused;
-        if (changed) { FreezePrimaryTexture(); SplitScreenInteriorVisibility.InvalidateRooms(); }
+        if (changed) { _mirroring = _legacyMirroring = false; _cameraPlayback.Clear(); FreezePrimaryTexture(); SplitScreenInteriorVisibility.InvalidateRooms(); }
         // A view keeps the angle it is seen from as it moves between the main camera (large, or the heard one among
         // the tiles) and its own small-view camera; only the distance returns to vanilla's. One not seen yet starts
         // from behind its player.
@@ -222,52 +226,50 @@ internal sealed class LethalCompanySplitScreenRenderAdapter : IGameSplitScreenRe
         LethalCompanySpectatorPresentation.Tick();
     }
 
-    public void MirrorPrimaryPose((Vector3 Position, Quaternion Rotation, float FieldOfView)? pose, bool following)
+    public void MirrorPrimaryPose(SpectatorCameraSample? pose, SpectatorSplitView followedView)
     {
         if (!_active) return;
         // Input ownership lasts until following ends, including gaps between target and pose packets.
-        _controller!.Mirrored = following;
-        if (!following || !_focused || _primaryCamera == null || _primaryTarget == null)
+        _controller!.Mirrored = followedView != SpectatorSplitView.None;
+        if (followedView != SpectatorSplitView.Watching || !_focused || _primaryCamera == null || _primaryTarget == null)
         {
             // Following over, the large view turns on from the angle it was last showing.
-            if (_mirroring && _focused && !following) FacePivot(_mirrorRotation);
-            _mirroring = false; return;
+            if (_mirroring && _focused && followedView == SpectatorSplitView.None) FacePivot(_mirrorRotation);
+            _mirroring = _legacyMirroring = false; _cameraPlayback.Clear(); return;
         }
         var camera = _primaryCamera!.transform;
-        // Hold the current picture while a matching sample is still on its way.
         if (!_mirroring) { _mirrorPosition = camera.position; _mirrorRotation = camera.rotation; _mirrorFov = 0; _mirroring = true; }
+        // No matching camera (a target handoff): hold the last picture and start a fresh timeline when it arrives.
         if (!pose.HasValue)
         {
+            _cameraPlayback.Clear();
+            _legacyMirroring = false;
             camera.SetPositionAndRotation(_mirrorPosition, _mirrorRotation);
             return;
         }
-        // From the view as it was (our own camera) on the first frame, so following glides into place.
-        float ease = 1 - Mathf.Exp(-Time.unscaledDeltaTime / MirrorSeconds);
-        _mirrorPosition = Vector3.Lerp(_mirrorPosition, pose!.Value.Position, ease);
-        _mirrorRotation = Quaternion.Slerp(_mirrorRotation, pose.Value.Rotation, ease);
+        var sample = pose.Value;
+        if (sample.Buffered)
+        {
+            _legacyMirroring = false;
+            (_mirrorPosition, _mirrorRotation, _mirrorFov) = _cameraPlayback.Update(sample, Time.unscaledTimeAsDouble,
+                _mirrorPosition, _mirrorRotation, _mirrorFov > 0 ? _mirrorFov : _primaryCamera.fieldOfView);
+        }
+        else
+        {
+            // A sender without the timeline suffix still suppresses world movement. Keep its prior following path.
+            _cameraPlayback.Clear();
+            Vector3 target = _primaryTarget.transform.position;
+            if (_legacyMirroring) _mirrorPosition += target - _legacyTargetPosition;
+            _legacyTargetPosition = target; _legacyMirroring = true;
+            Vector3 position = sample.Frame == SpectatorCameraFrame.World ? sample.Position
+                : RemoteSpectatorMotionCompensationRules.ResolveLocalPosition(sample.Position, sample.Reference);
+            Quaternion rotation = sample.Frame == SpectatorCameraFrame.World ? sample.Rotation
+                : RemoteSpectatorMotionCompensationRules.ResolveLocalRotation(sample.Rotation, sample.Reference);
+            float ease = 1 - Mathf.Exp(-Time.unscaledDeltaTime / .1f);
+            _mirrorPosition = Vector3.Lerp(_mirrorPosition, position, ease);
+            _mirrorRotation = Quaternion.Slerp(_mirrorRotation, rotation, ease); _mirrorFov = sample.FieldOfView;
+        }
         camera.SetPositionAndRotation(_mirrorPosition, _mirrorRotation);
-        _mirrorFov = pose.Value.FieldOfView;
-    }
-
-    // The ship's furniture (the suits on their rack, the cupboard, ...) follows the ship in AutoParentToShip.LateUpdate,
-    // which may run after ours: while the ship moves, the views would draw it where the ship was last frame, shaking.
-    // It is moved now as the game is about to; the game's own camera draws after every LateUpdate and never sees this.
-    private AutoParentToShip[] _furniture = System.Array.Empty<AutoParentToShip>();
-    private float _furnitureFoundAt = float.NegativeInfinity;
-    private Vector3 _shipPosition;
-    private Quaternion _shipRotation;
-    public void FollowShip()
-    {
-        var round = StartOfRound.Instance;
-        var ship = round.elevatorTransform;
-        if (ship.position == _shipPosition && ship.rotation == _shipRotation || round.suckingFurnitureOutOfShip)
-        { _shipPosition = ship.position; _shipRotation = ship.rotation; return; }
-        _shipPosition = ship.position; _shipRotation = ship.rotation;
-        // Furniture is bought and placed during the round: looked up again every couple of seconds of ship motion.
-        if (Time.unscaledTime - _furnitureFoundAt > 2)
-        { _furniture = UnityEngine.Object.FindObjectsByType<AutoParentToShip>(FindObjectsSortMode.None); _furnitureFoundAt = Time.unscaledTime; }
-        foreach (var piece in _furniture)
-            if (piece != null && !piece.disableObject) piece.MoveToOffset();
     }
 
     public void SetTileShadowCascades(int cascades) => _tileCascades = cascades;
@@ -420,7 +422,8 @@ internal sealed class LethalCompanySplitScreenRenderAdapter : IGameSplitScreenRe
     public void Restore(Predicate<Texture>? keep = null)
     {
         if (!_active) return;
-        _controller!.Mirrored = _mirroring = false;
+        _controller!.Mirrored = _mirroring = _legacyMirroring = false;
+        _cameraPlayback.Clear();
         _controller.EndPreview();
         _controller.SetSplitScreenContext(false, false);
         _controller.RestoreSplitScreenMode(_savedMode, _savedEnhanced);

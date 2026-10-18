@@ -461,6 +461,16 @@ public sealed partial class LethalCompanySpectatorAdapter :
     }
 
     /// <inheritdoc />
+    public bool TryGetSpectatedTargetPivot(ulong? targetClientId, ulong? targetPlayerSlotId, out Vector3 pivot)
+    {
+        var round = StartOfRound.Instance;
+        PlayerControllerB? player = round != null && round.allPlayerScripts != null ? ResolvePlayer(round.allPlayerScripts, targetClientId, targetPlayerSlotId) : null;
+        // As vanilla's spectate pivot (and the split-screen vanilla view): 0.7 m above the lower spine.
+        pivot = player != null ? player.lowerSpine.position + Vector3.up * .7f : default;
+        return player != null;
+    }
+
+    /// <inheritdoc />
     public bool TryGetSpectatedTargetMotionReference(
         ulong? targetClientId,
         ulong? targetPlayerSlotId,

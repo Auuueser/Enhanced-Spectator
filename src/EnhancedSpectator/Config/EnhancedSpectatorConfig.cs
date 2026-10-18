@@ -1275,7 +1275,7 @@ public sealed class EnhancedSpectatorConfig
             "Networking",
             "SpectatorPoseSyncInterval",
             0.1f,
-            "Minimum seconds between spectator camera pose messages. Higher values reduce traffic; lower values track movement more closely.");
+            "Normal spectator pose interval. A large view being followed streams completed camera samples at up to 30 Hz (faster configured rates are preserved). 普通观战姿态间隔；大窗被跟随时以最高 30 Hz 连续同步镜头，保留更快的自定义频率。");
 
         ConfigEntry<bool> enableVoiceActivitySync = config.Bind(
             "Networking",

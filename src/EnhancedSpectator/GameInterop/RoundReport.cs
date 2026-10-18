@@ -59,7 +59,7 @@ internal sealed class RoundReport
         string[] notes = chinese
             ? new[] { "最懒惰的员工", "最偏执的员工", "受伤最多的员工", "最赚钱的员工" }
             : new[] { "The laziest employee.", "The most paranoid employee.", "Sustained the most injuries.", "Most profitable" };
-        Planet = planet; Grade = "B"; AllDead = false; Collected = 742; Total = 1180;
+        Planet = planet; Grade = "S"; AllDead = false; Collected = 742; Total = 1180;
         Penalty = Level = false; PenaltyLines = PenaltyDue = LevelName = LevelExperience = string.Empty; LevelFill = 0;
         Players.Clear();
         for (int i = 0; i < people.Count; i++)

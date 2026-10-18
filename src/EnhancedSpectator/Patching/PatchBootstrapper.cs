@@ -15,6 +15,7 @@ public sealed class PatchBootstrapper : IDisposable
     {
         new SpectatorLifecyclePatchModule(),
         new SpectatePreviousPlayerCompatPatchModule(),
+        new PlayerStatusBarsCompatPatchModule(),
     };
 
     private bool _registered;

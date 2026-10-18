@@ -5,6 +5,10 @@ using EnhancedSpectator.Logging;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.SceneManagement;
+using System.Collections.Generic;
+using UnityEngine.LowLevel;
+using UnityEngine.PlayerLoop;
+using LowLevelPlayerLoop = UnityEngine.LowLevel.PlayerLoop;
 
 namespace EnhancedSpectator.Runtime;
 
@@ -41,6 +45,7 @@ public sealed class EnhancedSpectatorRuntimeDriver : MonoBehaviour
             Camera.onPostRender += OnCameraPostRender;
             RenderPipelineManager.endCameraRendering += OnEndCameraRendering;
             RenderPipelineManager.beginCameraRendering += OnBeginCameraRendering;
+            PlaceAfterLateUpdate(true);
             _sceneHookRegistered = true;
         }
 
@@ -81,6 +86,7 @@ public sealed class EnhancedSpectatorRuntimeDriver : MonoBehaviour
             Camera.onPostRender -= OnCameraPostRender;
             RenderPipelineManager.endCameraRendering -= OnEndCameraRendering;
             RenderPipelineManager.beginCameraRendering -= OnBeginCameraRendering;
+            PlaceAfterLateUpdate(false);
             _sceneHookRegistered = false;
         }
 
@@ -111,6 +117,33 @@ public sealed class EnhancedSpectatorRuntimeDriver : MonoBehaviour
     private void LateUpdate()
     {
         _featureBootstrapper?.LateTick();
+    }
+
+    // A player-loop step right after every script's LateUpdate, before anything renders: the game moves things there
+    // (a held item onto its holder's hand, the ship's furniture with the ship), and cameras drawn by hand must see
+    // them where the game's own camera will. A LateUpdate of ours may run before theirs.
+    private struct AfterLateUpdateStep { }
+
+    private static void PlaceAfterLateUpdate(bool place)
+    {
+        var root = LowLevelPlayerLoop.GetCurrentPlayerLoop();
+        var stages = root.subSystemList;
+        for (int i = 0; i < stages.Length; i++)
+        {
+            if (stages[i].type != typeof(PreLateUpdate)) continue;
+            var steps = new List<PlayerLoopSystem>(stages[i].subSystemList);
+            steps.RemoveAll(step => step.type == typeof(AfterLateUpdateStep));
+            if (place)
+                steps.Insert(steps.FindIndex(step => step.type == typeof(PreLateUpdate.ScriptRunBehaviourLateUpdate)) + 1,
+                    new PlayerLoopSystem { type = typeof(AfterLateUpdateStep), updateDelegate = AfterLateUpdate });
+            stages[i].subSystemList = steps.ToArray();
+        }
+        LowLevelPlayerLoop.SetPlayerLoop(root);
+    }
+
+    private static void AfterLateUpdate()
+    {
+        if (_instance != null) _featureBootstrapper?.AfterLateTick();
     }
 
     internal static void GuiTick() => _featureBootstrapper?.GuiTick();

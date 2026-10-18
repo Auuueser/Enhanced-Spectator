@@ -40,13 +40,17 @@ internal readonly struct SplitScreenDeadPlayer
     internal readonly string FollowingName;
     // They follow us directly (FollowingName is ours), or their follow chain leads back to us: following them would loop.
     internal readonly bool FollowingYou, FollowLoop;
+    // Not heard by the local player under the split-screen voice rules (not in its large view's group, or watching a
+    // large view while it sits in the audience): its chip is greyed out.
+    internal readonly bool Apart;
     internal SplitScreenDeadPlayer(SplitScreenKey key, SplitScreenKey source, string name, ulong steamId, bool local,
         SplitScreenKey? watching = null, string watchingName = "", bool enhanced = true,
         Networking.SpectatorSplitView splitView = Networking.SpectatorSplitView.Watching, string followingName = "",
-        bool followingYou = false, bool followLoop = false)
+        bool followingYou = false, bool followLoop = false, bool apart = false)
     {
         Key = key; Source = source; Name = name; SteamId = steamId; Local = local; Watching = watching; WatchingName = watchingName;
         Enhanced = enhanced; SplitView = splitView; FollowingName = followingName; FollowingYou = followingYou; FollowLoop = followLoop;
+        Apart = apart;
     }
 }
 

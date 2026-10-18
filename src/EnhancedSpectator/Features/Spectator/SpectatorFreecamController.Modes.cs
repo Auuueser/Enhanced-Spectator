@@ -54,17 +54,15 @@ public sealed partial class SpectatorFreecamController
     internal float VanillaDistance => _vanillaDistance;
     /// <summary>Vanilla's default spectate distance again (a split-screen large view opened anew).</summary>
     internal void ResetVanillaDistance() => _vanillaDistance = 1.3f;
-    private readonly SpectatorVanillaIdle _vanillaIdle = new();
+    private readonly SpectatorIdle _idle = new();
     /// <summary>
-    /// Vanilla spectating keeps the game's own view, so it has no idle turn or height of its own; after the idle wait
-    /// with no view mouse or wheel input the ghost simply counts as centred on its teammate (hidden for others,
-    /// translucent while speaking).
+    /// The player has left the camera alone for the idle wait (see <see cref="SpectatorIdle"/>), in any camera and
+    /// whatever the recentring option, which only moves this player's own camera.
     /// </summary>
-    private bool UsesVanillaView => _wasSpectating && !_state.UserEnabled && !IsPreview && (!_splitScreenActive || _splitScreenFocused);
-    internal bool IsVanillaIdle => UsesVanillaView && _vanillaIdle.IsIdle;
+    internal bool IsIdle => _idle.IsIdle;
     /// <summary>
-    /// The last frame the player moved the camera with the mouse (not through a menu, a free cursor or watching
-    /// together); a reader sampling less often than every frame still sees a movement between its samples.
+    /// The last frame the player deliberately operated the camera with the mouse (not through a menu or a free
+    /// cursor); a reader sampling less often than every frame still sees an operation between its samples.
     /// </summary>
     internal int CameraMovedFrame { get; private set; } = -1;
     /// <summary>Vanilla orbit distance, reset on death and independent of enhanced entry framing.</summary>
@@ -105,7 +103,6 @@ public sealed partial class SpectatorFreecamController
     internal float TransitionOpacity => OwnsCamera && _state.Mode == SpectatorCameraMode.Monitor ? Mathf.Max(_monitorDirector.TransitionOpacity, _monitorRecoveryOpacity) : 0;
     /// <summary>Whether enhanced rendering owns the spectator camera.</summary>
     public bool OwnsCamera => _ownedCamera != null && _state.IsActive && _state.UserEnabled;
-    internal bool IsAutoCentering => OwnsCamera && _settings.Camera.AutoCenter.Value && _autoCenter.IsCentering;
     internal int EffectiveMonitorStyle => _monitorPreference.Automatic ? 2 : MonitorCameraStyles.Available(_settings.Camera.MonitorStyle.Value);
     internal void SelectMonitorStyle(int style)
     {

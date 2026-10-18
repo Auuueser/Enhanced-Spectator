@@ -113,12 +113,17 @@ public sealed partial class SpectatorFreecamController
     {
         try
         {
-            // Vanilla spectating is driven by the mouse (orbit, wheel distance, clicks to switch teammate); keys are left
-            // out so push-to-talk keeps an idle ghost centred (translucent while speaking) instead of revealing it. A
-            // menu, chat, another window or a free cursor means the mouse is busy elsewhere, not with the view.
-            bool active = !CameraInputBlocked && _inputService.HasCameraMouseActivity;
-            if (active) CameraMovedFrame = Time.frameCount;
-            _vanillaIdle.Update(UsesVanillaView, active, Time.unscaledDeltaTime);
+            // Idleness counts operating the view: the mouse (look, wheel, clicks to switch teammate) and the free and
+            // third-person cameras' own movement keys. Other keys are left out so push-to-talk keeps an idle ghost hidden
+            // (translucent while speaking) instead of revealing it. A menu, chat, another window or a free cursor means
+            // the mouse is busy elsewhere, not with the view.
+            bool blocked = CameraInputBlocked;
+            bool moving = !blocked && !Mirrored && OwnsCamera
+                && (_state.Mode == SpectatorCameraMode.Freecam || _state.Mode == SpectatorCameraMode.ThirdPerson)
+                && _inputService.ReadMoveInput().sqrMagnitude > 0f;
+            if (_idle.Update(_wasSpectating && !IsPreview, !blocked && _inputService.HasCameraClick || moving,
+                    blocked ? Vector2.zero : _inputService.ReadLookDelta() * _settings.FreecamLookSensitivity, Time.unscaledDeltaTime))
+                CameraMovedFrame = Time.frameCount;
             if (_splitScreenHandledInputFrame == Time.frameCount || Mirrored) return;
             if (_splitScreenActive && !_splitScreenFocused) return;
             if (!IsPreview && !TryGetEligibleSnapshot(out _))

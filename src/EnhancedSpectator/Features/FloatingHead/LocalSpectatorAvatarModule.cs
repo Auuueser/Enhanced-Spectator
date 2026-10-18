@@ -6,7 +6,7 @@ namespace EnhancedSpectator.Features.FloatingHead;
 /// <summary>
 /// Runtime module for the local self-ghost third-person visual.
 /// </summary>
-public sealed class LocalSpectatorAvatarModule : IFeatureModule, IRuntimeLateTickable
+public sealed class LocalSpectatorAvatarModule : IFeatureModule, IRuntimeAfterLateTickable
 {
     private readonly LocalSpectatorAvatarVisualService _service;
     private bool _initialized;
@@ -26,7 +26,7 @@ public sealed class LocalSpectatorAvatarModule : IFeatureModule, IRuntimeLateTic
     }
 
     /// <inheritdoc />
-    public void LateTick()
+    public void AfterLateTick()
     {
         if (_initialized)
         {

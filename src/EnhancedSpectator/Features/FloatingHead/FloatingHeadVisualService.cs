@@ -563,7 +563,7 @@ public sealed class FloatingHeadVisualService : IDisposable
 
     // Voice is only looked up for spectators the centering rule would hide. A showing emote counts as speaking.
     private bool IsCenteringSpeaker(RemoteSpectatorInfo spectator)
-        => (_config.Camera.RevealSpeakingCenteringModels.Value || LethalCompanyModelVisibility.InFormation(spectator))
+        => LethalCompanyModelVisibility.RevealsSpeaking(spectator)
             && LethalCompanyModelVisibility.ShouldHideAutoCentering(spectator)
             && ((_visuals.TryGetValue(spectator.SpectatorClientId, out FloatingHeadVisual visual) ? visual.EmoteActive
                     : _pendingEmotes.TryGetValue(spectator.SpectatorClientId, out var pending) && Time.unscaledTime - pending.At < EmoteBubbleVisual.Seconds)

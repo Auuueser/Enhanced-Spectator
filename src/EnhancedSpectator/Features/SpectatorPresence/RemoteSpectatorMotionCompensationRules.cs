@@ -7,6 +7,11 @@ namespace EnhancedSpectator.Features.SpectatorPresence;
 /// </summary>
 public static class RemoteSpectatorMotionCompensationRules
 {
+    // Recover a sender-captured offset in world axes using the two orientations already in the pose packet.
+    // The watched player supplies translation, not its personal turn: old and new senders use the same wire data.
+    internal static Vector3 RestoreWorldOffset(Vector3 localPosition, Quaternion localRotation, Quaternion worldRotation)
+        => Rotate(Multiply(worldRotation, Inverse(localRotation)), localPosition);
+
     /// <summary>Captures a world point in the moving reference's local space.</summary>
     public static Vector3 CaptureLocalPosition(
         Vector3 worldPosition,

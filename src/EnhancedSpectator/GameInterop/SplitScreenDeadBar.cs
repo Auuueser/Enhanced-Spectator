@@ -17,8 +17,14 @@ internal sealed class SplitScreenDeadBar
 {
     private const float FadeIn = .05f, FadeOut = .22f, EmoteSeconds = 2.6f, EmotePop = .25f, EmoteFade = .4f;
     internal static readonly Color SpeakingColor = new Color(.8f, .4f, .1f, 1);
+    /// <summary>A speaker's chip (and a view's name plate) filled with translucent orange.</summary>
+    internal static readonly Color SpeakingFill = new Color(.88f, .42f, .1f, .62f);
+    // A chip greyed out (a player not heard: not in this large view's group, or not in the audience): its fill,
+    // speaking fill (the orange gone grey), name and avatar.
+    private static readonly Color ApartChip = new Color(.07f, .07f, .07f, .7f), ApartFill = new Color(.42f, .38f, .35f, .62f),
+        ApartName = new Color(.44f, .45f, .46f, 1), ApartAvatar = new Color(.4f, .4f, .4f, 1);
     private static readonly Color ChipColor = new Color(.05f, .055f, .062f, .86f), EdgeColor = new Color(.24f, .25f, .27f, 1),
-        SpeakingFill = new Color(.16f, .09f, .04f, .9f), NameColor = new Color(.86f, .87f, .88f, 1), FollowColor = new Color(.25f, .55f, 1, 1),
+        NameColor = new Color(.86f, .87f, .88f, 1), FollowColor = new Color(.25f, .55f, 1, 1),
         CardColor = new Color(.035f, .038f, .045f, .96f), HoverEdge = new Color(.62f, .64f, .68f, 1), MutedColor = new Color(.62f, .64f, .66f, 1), BubbleColor = new Color(.96f, .93f, .86f, 1),
         BubbleText = new Color(.1f, .08f, .06f, 1);
     private readonly RectTransform _root, _card;
@@ -82,7 +88,8 @@ internal sealed class SplitScreenDeadBar
         {
             same = players[i].Key == _players[i].Key && players[i].Name == _players[i].Name && players[i].SteamId == _players[i].SteamId;
             watchingChanged |= players[i].WatchingName != _players[i].WatchingName || players[i].SplitView != _players[i].SplitView
-                || players[i].FollowingName != _players[i].FollowingName || players[i].FollowLoop != _players[i].FollowLoop;
+                || players[i].FollowingName != _players[i].FollowingName || players[i].FollowLoop != _players[i].FollowLoop
+                || players[i].Apart != _players[i].Apart;
         }
         if (same)
         {
@@ -158,11 +165,16 @@ internal sealed class SplitScreenDeadBar
             bool avatar = picture != null;
             // An empty RawImage would draw a white square until the Steam avatar arrives.
             if (chip.Avatar.enabled != avatar) { chip.Avatar.enabled = avatar; chip.AvatarBack.gameObject.SetActive(!avatar); }
+            bool apart = _players[i].Apart;
+            if (apart != chip.Apart) { chip.Apart = apart; chip.Dirty = true; }
             if (speak == chip.Speak && speak == 0 && !chip.Dirty) continue;
             chip.Speak = speak; chip.Dirty = false;
-            var edge = Color.Lerp(i == _hover ? HoverEdge : EdgeColor, SpeakingColor, speak);
+            var edge = i == _hover ? HoverEdge : EdgeColor;
             foreach (var image in chip.Edges) image.color = edge;
-            chip.Background.color = Color.Lerp(ChipColor, SpeakingFill, speak);
+            chip.Background.color = apart ? Color.Lerp(ApartChip, ApartFill, speak) : Color.Lerp(ChipColor, SpeakingFill, speak);
+            chip.Name.color = apart ? ApartName : NameColor;
+            chip.Avatar.color = apart ? ApartAvatar : Color.white;
+            chip.AvatarBack.color = Color.HSVToRGB(_players[i].Source.SlotId * .137f % 1f, apart ? 0 : .45f, apart ? .3f : .55f);
         }
     }
 
@@ -318,7 +330,7 @@ internal sealed class SplitScreenDeadBar
         internal readonly TextMeshProUGUI Initial, Name, Bubble;
         internal readonly CanvasGroup BubbleGroup;
         internal float Speak, NameWidth, EmoteAge;
-        internal bool Dirty;
+        internal bool Dirty, Apart;
         internal ulong SteamId;
         internal Chip(RectTransform root, Image background, Image[] edges, Image[] followRing, RawImage avatar, Image avatarBack, TextMeshProUGUI initial,
             TextMeshProUGUI name, RectTransform bubbleRoot, CanvasGroup bubbleGroup, TextMeshProUGUI bubble)

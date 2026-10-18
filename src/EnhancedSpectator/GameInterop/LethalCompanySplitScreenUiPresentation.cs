@@ -28,6 +28,11 @@ internal static class LethalCompanySplitScreenUiPresentation
     /// covered by the split-screen until then. Until this time, while alive, that UI stays hidden.
     /// </summary>
     internal static float HideSpectateUiUntil = float.NegativeInfinity;
+    /// <summary>
+    /// Our own ESC-menu entry and panels: built on the game's HUD canvas beside its menu (not inside it), and part of
+    /// the menu, so they draw with it over the split-screen.
+    /// </summary>
+    internal static Transform? ModMenu;
     private static readonly SpectatorCanvasRenderScope Scope = new();
     private static readonly HashSet<Canvas> Roots = new();
 
@@ -38,7 +43,7 @@ internal static class LethalCompanySplitScreenUiPresentation
     internal static int ClockPhase => System.Array.IndexOf(HUDManager.Instance.clockIcons, HUDManager.Instance.clockIcon.sprite);
     /// <summary>The day's clock runs: landed (or taking off) on a moon with time; not in orbit or at the Company.</summary>
     internal static bool ClockRunning => StartOfRound.Instance is { inShipPhase: false } round && round.currentLevel.planetHasTime;
-    private static readonly Transform[] TakeoffKeep = new Transform[2], MenuKeep = new Transform[5], MenuOnlyKeep = new Transform[3];
+    private static readonly Transform[] TakeoffKeep = new Transform[2], MenuKeep = new Transform[6], MenuOnlyKeep = new Transform[4];
 
     internal static void Restore() => Scope.Restore();
     internal static void BeforeSubmit()
@@ -92,8 +97,8 @@ internal static class LethalCompanySplitScreenUiPresentation
     {
         var keep = chat ? MenuKeep : MenuOnlyKeep;
         keep[0] = StartOfRound.Instance.localPlayerController.quickMenuManager.menuContainer.transform;
-        keep[1] = hud.dialogueBoxAnimator.transform; keep[2] = hud.gameOverAnimator.transform;
-        if (chat) { keep[3] = hud.chatText.transform; keep[4] = hud.chatTextField.transform; }
+        keep[1] = hud.dialogueBoxAnimator.transform; keep[2] = hud.gameOverAnimator.transform; keep[3] = ModMenu != null ? ModMenu : keep[0];
+        if (chat) { keep[4] = hud.chatText.transform; keep[5] = hud.chatTextField.transform; }
         Scope.HideExcept(hud.chatText.canvas.rootCanvas, keep, hud.SpectateBoxesContainer.parent);
     }
 }

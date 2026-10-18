@@ -1,7 +1,7 @@
 <h1 align="center">Enhanced Spectator</h1>
 
 <p align="center">
-  <a href="https://github.com/Auuueser/Enhanced-Spectator/releases"><img alt="版本 0.4.5" src="https://img.shields.io/badge/版本-0.4.5-E35B18?style=flat-square&labelColor=24282C"></a>
+  <a href="https://github.com/Auuueser/Enhanced-Spectator/releases"><img alt="版本 0.4.6" src="https://img.shields.io/badge/版本-0.4.6-E35B18?style=flat-square&labelColor=24282C"></a>
   <a href="https://store.steampowered.com/app/1966720/Lethal_Company/"><img alt="游戏版本 V81" src="https://img.shields.io/badge/游戏版本-V81-E35B18?style=flat-square&labelColor=24282C"></a>
   <a href="https://github.com/BepInEx/BepInEx"><img alt="BepInEx 5" src="https://img.shields.io/badge/BepInEx-5-526D82?style=flat-square&labelColor=24282C"></a>
   <a href="https://github.com/Auuueser/Enhanced-Spectator/blob/main/LICENSE"><img alt="许可 GPL-3.0" src="https://img.shields.io/badge/许可-GPL--3.0-E35B18?style=flat-square&labelColor=24282C"></a>
@@ -69,6 +69,14 @@
 <table>
   <tr>
     <td align="center"><img width="100%" src="assets/readme/v0.4.5/zh/ratings.webp" alt="同事评估"><img width="100%" src="assets/readme/spacer.png" alt=""></td>
+  </tr>
+</table>
+
+### 结算界面
+
+<table>
+  <tr>
+    <td align="center"><img width="100%" src="assets/readme/v0.4.6/zh/report.webp" alt="结算界面"><img width="100%" src="assets/readme/spacer.png" alt=""></td>
   </tr>
 </table>
 
@@ -223,6 +231,14 @@
 <table>
   <tr>
     <td align="center"><img width="100%" src="assets/readme/v0.4.5/en/ratings.webp" alt="Colleague reviews"><img width="100%" src="assets/readme/spacer.png" alt=""></td>
+  </tr>
+</table>
+
+### Round report
+
+<table>
+  <tr>
+    <td align="center"><img width="100%" src="assets/readme/v0.4.6/en/report.webp" alt="Round report"><img width="100%" src="assets/readme/spacer.png" alt=""></td>
   </tr>
 </table>
 
